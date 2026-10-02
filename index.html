@@ -11,6 +11,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Mis Turnos">
+<meta name="author" content="Francisco Muñoz Dorado">
+<meta name="description" content="App para fichar turnos rotativos y controlar horas extra, festivos, bajas y nómina. Creada por Francisco Muñoz Dorado.">
 <meta name="theme-color" content="#E4007C">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -785,7 +787,8 @@ function renderAjustes(){
       ${own.map(k=>`<li><span>${fdate(k)}</span><span>Marcado por ti</span></li>`).join("")}
     </ul>
   </div>
-  <p class="note">${db?"Tus datos se guardan en tu cuenta y los ves desde cualquier dispositivo.":"Sin conexión a tu cuenta: los datos se guardan solo en este navegador."}</p>`;
+  <p class="note">Tus datos se guardan solo en este móvil. Haz una copia de seguridad de vez en cuando.</p>
+  <p class="note">Mis Turnos · creada por <b>Francisco Muñoz Dorado</b><br><a href="https://github.com/francisykza/mis-turnos" target="_blank" rel="noopener" style="color:var(--fucsia)">Código en GitHub</a> · Licencia MIT · © 2026</p>`;
   $("bk-exp").onclick=exportBackup;
   $("bk-imp").onclick=()=>$("bk-file").click();
   $("bk-file").onchange=e=>{const f=e.target.files[0];if(f)importBackup(f);e.target.value=""};
