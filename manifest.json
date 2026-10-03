@@ -26,5 +26,21 @@
    "type": "image/png",
    "purpose": "maskable"
   }
+ ],
+ "id": "./",
+ "shortcuts": [
+  {
+   "name": "Fichar ahora",
+   "short_name": "Fichar",
+   "description": "Ficha entrada o salida con la hora actual",
+   "url": "./?fichar",
+   "icons": [
+    {
+     "src": "icon-192.png",
+     "sizes": "192x192",
+     "type": "image/png"
+    }
+   ]
+  }
  ]
 }

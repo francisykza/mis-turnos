@@ -753,6 +753,10 @@ function renderAjustes(){
   const fdate=s=>{const x=parse(s);return `${DOW[x.getDay()]} ${x.getDate()} ${MON[x.getMonth()]}`};
   $("v-ajustes").innerHTML=`
   <div class="card">
+    <h3>Fichar sin abrir la app</h3>
+    <p class="hint">Con la app instalada, mantén pulsado su icono y arrastra <b>"Fichar ahora"</b> a la pantalla de inicio. Al tocarlo ficha la entrada (o la salida si ya habías entrado) con la hora exacta y calcula la extra con tu horario.</p>
+  </div>
+  <div class="card">
     <h3>Copia de seguridad</h3>
     <p class="hint">Tus datos se guardan solo en este móvil. Haz una copia de vez en cuando por si cambias de móvil o borras el navegador.</p>
     <div class="grid2"><button class="btn line small" id="bk-exp">Exportar copia</button><button class="btn line small" id="bk-imp">Importar copia</button></div>
@@ -968,6 +972,46 @@ function flash(){
   const f=$("flash"); f.animate([{opacity:0},{opacity:.9,offset:.08},{opacity:.1,offset:.2},{opacity:.6,offset:.3},{opacity:0}],{duration:650,easing:"ease-out"});
 }
 render();
+
+/* ---------- fichaje rápido desde fuera de la app (acceso directo ?fichar) ---------- */
+function quickClock(){
+  let q; try{q=new URLSearchParams(location.search)}catch(e){return}
+  if(!q.has("fichar")) return;
+  try{history.replaceState(null,"",location.pathname)}catch(e){}
+  const t=todayISO(), r=Object.assign({},rec(t)||{}), p=plan(t), now=nowHM();
+  let title, lines=[];
+  if(r.tipo){
+    title="Hoy está marcado como "+TIPOS[r.tipo].toLowerCase(); lines.push("No he fichado nada. Si vas a trabajar, cámbialo desde Hoy.");
+  } else if(!r.e){
+    r.e=now; r.s=null; setRec(t,r);
+    title="Entrada fichada · "+now;
+    if(p.fest) lines.push("Hoy es festivo: todo lo que trabajes cuenta como horas festivas.");
+    else if(p.rest) lines.push("Es tu día de descanso: todo lo que trabajes cuenta como extra.");
+    else{
+      const diff=toMin(p.e)-toMin(now);
+      if(diff>0) lines.push(`Entras <b style="color:var(--fucsia)">${fmt(diff)} antes</b> de tu turno (${p.e}).`,`Si sales a tu hora (${p.s}) serán <b style="color:var(--fucsia)">+${fmt(diff)} de extra</b>.`);
+      else if(diff<0) lines.push(`Entras ${fmt(-diff)} más tarde de tu turno (${p.e}).`);
+      else lines.push("Justo a tu hora.");
+    }
+    lines.push("Al salir, vuelve a tocar el mismo botón.");
+  } else if(!r.s){
+    if(dur(r.e,now)<2){ title="Entrada ya fichada a las "+r.e; lines.push("Para la salida, toca el botón cuando termines."); }
+    else{
+      r.s=now; setRec(t,r); const c=calc(t);
+      title="Salida fichada · "+now;
+      lines.push(`Hoy: <b>${r.e} – ${r.s}</b> · ${fmt(c.worked)} trabajadas`);
+      if(c.extra) lines.push(`<b style="color:var(--fucsia)">+${fmt(c.extra)} de extra</b> sumadas al periodo`);
+      if(c.festH) lines.push(`<b style="color:var(--fest-ink)">${fmt(c.festH)} festivas</b>`);
+      if(c.falta) lines.push(`Te faltan ${fmt(c.falta)} para completar el turno`);
+      if(!c.extra && !c.festH && !c.falta) lines.push("Turno exacto, sin extras.");
+    }
+  } else {
+    title="Hoy ya está fichado"; lines.push(`${r.e} – ${r.s}. Si has vuelto a entrar, corrígelo desde Hoy.`);
+  }
+  openSheet(`<div class="grab"></div><h3 id="sh-title">${title}</h3><p class="num" style="color:var(--muted);margin:12px 0 0;line-height:1.6">${lines.join("<br>")}</p><div class="foot" style="grid-template-columns:1fr"><button class="btn primary" data-close>Vale</button></div>`);
+  setTimeout(flash,150);
+}
+quickClock();
 
 /* ---------- conexión con la cuenta ---------- */
 (async()=>{
