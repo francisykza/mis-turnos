@@ -8,7 +8,17 @@ const NAT = {
   "2027-08-15":"Asunción","2027-10-12":"Fiesta Nacional","2027-11-01":"Todos los Santos","2027-12-06":"Constitución",
   "2027-12-08":"Inmaculada","2027-12-25":"Navidad"
 };
-const DEF = {refMonday:"2026-09-21", refShift:"M", M:{e:"06:30",s:"12:55",rest:0}, T:{e:"14:00",s:"20:25",rest:6}, weekly:37.5, corte:20};
+// Valores por defecto de la versión 1 (solo mañana/tarde alternas). Sirven para convertir
+// los datos de quien ya usaba la app, aunque nunca hubiera tocado los ajustes.
+const LEGACY_DEF = {refMonday:"2026-09-21", refShift:"M", M:{e:"06:30",s:"12:55",rest:0}, T:{e:"14:00",s:"20:25",rest:6}, weekly:37.5, corte:20};
+// Hasta 4 turnos. El id fija el color: M ámbar, T violeta, N azul noche, P coral.
+const TURNO_IDS = ["M","T","N","P"];
+const TURNOS_DEF = {
+  M:{nombre:"Mañana", e:"06:00", s:"14:00", on:true},
+  T:{nombre:"Tarde",  e:"14:00", s:"22:00", on:true},
+  N:{nombre:"Noche",  e:"22:00", s:"06:00", on:false},
+  P:{nombre:"Otro",   e:"09:00", s:"17:00", on:false}
+};
 const DOW = ["dom","lun","mar","mié","jue","vie","sáb"];
 const DOWL = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
 const MON = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
@@ -18,17 +28,6 @@ const ls = {
   get(k){try{return JSON.parse(localStorage.getItem("mt_"+k))}catch(e){return null}},
   set(k,v){try{localStorage.setItem("mt_"+k,JSON.stringify(v))}catch(e){}}
 };
-/* Versión del formato de los datos guardados. Cuando cambie la forma de guardar
-   (p. ej. patrones de turno configurables), se sube y se añade un paso a migrate(). */
-const DATA_V = 1;
-function migrate(c, m, from){
-  // from = versión con la que se guardaron (0 = antes de existir este número).
-  // v0 → v1: mismo formato; solo empieza a anotarse la versión.
-  return {cfg:c, months:m};
-}
-let cfg = Object.assign({}, DEF, ls.get("cfg")||{});
-let months = ls.get("months") || {};
-(()=>{const v=Number(ls.get("schema"))||0; if(v<DATA_V){const o=migrate(cfg,months,v);cfg=o.cfg;months=o.months;ls.set("cfg",cfg);ls.set("months",months);ls.set("schema",DATA_V)}})();
 let db = null;
 let tab = "hoy";
 let viewYM = null;
@@ -46,18 +45,82 @@ const fmt = (m,sign) => {m=Math.round(m||0);const neg=m<0;m=Math.abs(m);const h=
   let s = h? (mm? h+"h "+pad(mm)+"m" : h+"h") : mm+"m"; if(m===0)s="0h"; return (neg?"−":(sign?"+":""))+s};
 const todayISO = () => iso(new Date());
 
+/* ---------- datos guardados y versión del formato ---------- */
+/* DATA_V sube cuando cambia la forma de guardar; normCfg/migrate convierten lo antiguo.
+   v1 → v2: mañana/tarde alternas por semanas pasan a un ciclo de días repetible
+   (cfg.turnos + cfg.ciclo = {inicio, dias:["M","M",…,"D"]}), que admite noche,
+   horario fijo, 4×4 o cualquier patrón. */
+const DATA_V = 2;
+const clone = o => JSON.parse(JSON.stringify(o));
+function defaultCiclo(){
+  return {inicio: iso(mondayOf(new Date())), dias: ["M","M","M","M","M","M","D","T","T","T","T","T","T","D"]};
+}
+const DEF = {turnos: clone(TURNOS_DEF), ciclo: defaultCiclo(), weekly: 40, corte: 20};
+function legacyToV2(o){
+  const L = Object.assign({}, LEGACY_DEF, o);
+  const t = clone(TURNOS_DEF);
+  t.M = Object.assign(t.M, {e:L.M.e, s:L.M.s, on:true});
+  t.T = Object.assign(t.T, {e:L.T.e, s:L.T.s, on:true});
+  const first = L.refShift==="T" ? "T" : "M", second = first==="M" ? "T" : "M";
+  const st = mondayOf(parse(L.refMonday)), dias = [];
+  for(let i=0;i<14;i++){
+    const sh = i<7 ? first : second, d = addDays(st,i);
+    dias.push(d.getDay()===Number(L[sh].rest) ? "D" : sh);
+  }
+  const out = Object.assign({}, L, {turnos:t, ciclo:{inicio:iso(st), dias}});
+  ["M","T","refMonday","refShift"].forEach(k=>delete out[k]);
+  return out;
+}
+// raw: lo guardado tal cual · legacy: si falta el ciclo, viene de la v1 (aunque raw esté vacío)
+function normCfg(raw, legacy){
+  let c = raw ? clone(raw) : {};
+  if(!c.ciclo && (legacy || raw)) c = legacyToV2(c);
+  const out = Object.assign({}, DEF, c);
+  out.turnos = Object.assign(clone(TURNOS_DEF), c.turnos||{});
+  if(!out.ciclo || !Array.isArray(out.ciclo.dias) || !out.ciclo.dias.length) out.ciclo = defaultCiclo();
+  return out;
+}
+function migrate(c, m, from){ return {cfg: normCfg(c, true), months: m||{}} }
+
+let months = ls.get("months") || {};
+const rawCfg = ls.get("cfg");
+const isNewUser = !rawCfg && !Object.keys(months).length;
+let cfg = normCfg(rawCfg, !isNewUser);
+if((Number(ls.get("schema"))||0) < DATA_V){
+  if(!isNewUser) ls.set("cfg", cfg);   // quien ya tenía datos queda convertido y guardado
+  ls.set("schema", DATA_V);
+}
+
 /* ---------- lógica de turnos ---------- */
-function shiftOf(d){
-  const diff = Math.round((mondayOf(d)-parse(cfg.refMonday))/(7*864e5));
-  const even = ((diff%2)+2)%2===0;
-  return even ? cfg.refShift : (cfg.refShift==="M"?"T":"M");
+// Cuando se cambian los turnos «a partir de hoy», lo anterior se guarda en cfg.antes
+// (lista ordenada de {hasta, turnos, ciclo}) para que los periodos pasados no se recalculen.
+function srcFor(s){const a=cfg.antes;if(a)for(const h of a)if(s<=h.hasta)return h;return cfg}
+function cycVal(s,src){
+  src=src||srcFor(s);
+  const c=src.ciclo, n=c.dias.length;
+  const k=Math.round((parse(s)-parse(c.inicio))/864e5);
+  return c.dias[((k%n)+n)%n];
+}
+const isWork = (v,src) => !!(v && v!=="D" && (src||cfg).turnos[v]);
+// En un descanso, el turno «de referencia» es el último que se trabajó en el ciclo
+function nearShift(s,src){
+  const n=src.ciclo.dias.length, d=parse(s);
+  for(let i=1;i<=n;i++){const v=cycVal(iso(addDays(d,-i)),src);if(isWork(v,src))return v}
+  return TURNO_IDS.find(k=>src.turnos[k]&&src.turnos[k].on)||"M";
 }
 function rec(s){const m=months[s.slice(0,7)];return m? m[s.slice(8)]||null : null}
 function isFest(s){const r=rec(s);if(r&&r.fest!=null)return r.fest;return !!NAT[s]}
 function plan(s){
-  const d=parse(s), sh=shiftOf(d), c=cfg[sh];
-  const rest = d.getDay()===Number(c.rest);
-  return {sh, rest, fest:isFest(s), e:c.e, s:c.s, min: rest?0:dur(c.e,c.s)};
+  const src=srcFor(s), v=cycVal(s,src), rest=!isWork(v,src), sh=rest?nearShift(s,src):v, c=src.turnos[sh]||TURNOS_DEF.M;
+  return {sh, name:c.nombre, rest, fest:isFest(s), e:c.e, s:c.s, min: rest?0:dur(c.e,c.s), night: toMin(c.s)<toMin(c.e)};
+}
+function weekLabel(mon){
+  const ids=[], names=[];
+  for(let i=0;i<7;i++){const s=iso(addDays(mon,i)), src=srcFor(s), v=cycVal(s,src);if(isWork(v,src)&&!ids.includes(v)){ids.push(v);names.push(src.turnos[v].nombre.toLowerCase())}}
+  if(!ids.length) return "Semana de descanso";
+  if(ids.length===1) return "Turno de "+names[0];
+  const txt=names.slice(0,-1).join(", ")+" y "+names[names.length-1];
+  return txt.charAt(0).toUpperCase()+txt.slice(1);
 }
 function calc(s){
   const p=plan(s), r=rec(s)||{};
@@ -111,21 +174,34 @@ function setRec(s,r){
 
 /* ---------- vistas ---------- */
 const $ = id => document.getElementById(id);
-const shiftName = sh => sh==="M"?"Mañana":"Tarde";
+function shiftName(sh){return (cfg.turnos[sh]&&cfg.turnos[sh].nombre)||"Turno"}
 function pillsFor(c){
   const p=c.p, out=[];
   if(c.r.tipo) out.push(`<span class="pill X">${TIPOS[c.r.tipo]}</span>`);
   if(p.fest) out.push(`<span class="pill F">Festivo${NAT[c.iso]&&c.r.fest!==true?" · "+NAT[c.iso]:""}</span>`);
   if(p.rest) out.push(`<span class="pill R">Descanso</span>`);
-  else out.push(`<span class="pill ${p.sh}">${shiftName(p.sh)} ${p.e}–${p.s}</span>`);
+  else out.push(`<span class="pill ${p.sh}">${p.name} ${p.e}–${p.s}</span>`);
   return out.join("");
 }
 
+// Turno de noche: si ayer se fichó la entrada y aún no la salida, y la hora de entrada
+// es «mayor» que la actual (se ha pasado la medianoche), ese turno sigue abierto.
+function nightOpen(){
+  const r=rec(todayISO()); if(r&&r.e&&!r.s) return null;
+  const y=iso(addDays(new Date(),-1)), ry=rec(y), now=nowHM();
+  if(!ry||!ry.e||ry.s||ry.tipo) return null;
+  return toMin(ry.e)>toMin(now) && dur(ry.e,now)<=16*60 ? y : null;
+}
 function renderHoy(){
   const t=todayISO(), d=new Date(), c=calc(t); c.iso=t;
+  const od=nightOpen();
   const r=c.r;
   let big, sub, actions;
-  if(r.tipo){
+  if(od){
+    const ry=rec(od);
+    big=fmt(dur(ry.e,nowHM())); sub=`Turno de noche en curso · entraste ayer a las ${ry.e}`;
+    actions=`<button class="btn primary" id="b-outn">Fichar salida · ${nowHM()}</button><button class="btn ghost" data-edit="${od}" aria-label="Editar el turno de ayer">Editar</button>`;
+  } else if(r.tipo){
     big=TIPOS[r.tipo]; sub="Día sin fichaje";
     actions=`<button class="btn ghost" data-edit="${t}" style="grid-column:1/-1">Editar día</button>`;
   } else if(c.open){
@@ -159,7 +235,6 @@ function renderHoy(){
   }
   const target=cfg.weekly*60, total=wk.worked;
   const base=Math.min(total-wk.extra,target), wPct=Math.max(0,base)/Math.max(target,total)*100, xPct=wk.extra/Math.max(target,total)*100;
-  const wsh=shiftOf(d);
 
   // periodo de extras
   const per=periodOf(d), pt=sumRange(per.start, per.end);
@@ -181,7 +256,7 @@ function renderHoy(){
     <div class="actions">${actions}</div>
   </div>
   <section class="block">
-    <div class="h2"><h2>Esta semana</h2><span>Turno de ${shiftName(wsh).toLowerCase()}</span></div>
+    <div class="h2"><h2>Esta semana</h2><span>${weekLabel(mon)}</span></div>
     <div class="week">
       <div class="days7">${cells}</div>
       <div class="bar" role="img" aria-label="${fmt(total)} de ${fmt(target)}"><i class="w" style="width:${wPct}%"></i><i class="x" style="width:${xPct}%"></i></div>
@@ -192,6 +267,7 @@ function renderHoy(){
 
   $("b-x").onclick=()=>openExtra(t);
   const bin=$("b-in"); if(bin) bin.onclick=()=>{setRec(t,Object.assign({},r,{e:nowHM(),s:null}));toast("Entrada fichada a las "+nowHM())};
+  const bon=$("b-outn"); if(bon) bon.onclick=()=>{setRec(od,Object.assign({},rec(od),{s:nowHM()}));toast("Salida fichada a las "+nowHM())};
   const bout=$("b-out"); if(bout) bout.onclick=()=>{setRec(t,Object.assign({},r,{s:nowHM()}));toast("Salida fichada a las "+nowHM())};
   const bfull=$("b-full"); if(bfull) bfull.onclick=()=>{setRec(t,Object.assign({},r,{e:c.p.e,s:c.p.s}));toast("Turno completo apuntado")};
 }
@@ -206,8 +282,7 @@ function renderMes(){
   for(let w=mondayOf(first); w<=last; w=addDays(w,7)){
     const wEnd=addDays(w,6);
     const ws=sumRange(iso(w),iso(wEnd));
-    const sh=shiftOf(w);
-    html+=`<div class="wkhead num"><span>${w.getDate()} ${MON[w.getMonth()].slice(0,3)} – ${wEnd.getDate()} ${MON[wEnd.getMonth()].slice(0,3)} · ${shiftName(sh)}</span><span><strong>${fmt(ws.worked)}</strong> / ${fmt(cfg.weekly*60)}${ws.extra?` · <strong style="color:var(--fucsia)">${fmt(ws.extra,true)}</strong>`:""}</span></div>`;
+    html+=`<div class="wkhead num"><span>${w.getDate()} ${MON[w.getMonth()].slice(0,3)} – ${wEnd.getDate()} ${MON[wEnd.getMonth()].slice(0,3)} · ${weekLabel(w)}</span><span><strong>${fmt(ws.worked)}</strong> / ${fmt(cfg.weekly*60)}${ws.extra?` · <strong style="color:var(--fucsia)">${fmt(ws.extra,true)}</strong>`:""}</span></div>`;
     for(let i=0;i<7;i++){
       const di=addDays(w,i), s=iso(di); if(s<per.start||s>per.end) continue;
       const c=calc(s); c.iso=s;
@@ -281,7 +356,7 @@ function openExtra(day, mode){
       if(p.fest){total=worked;kind="festivas";lines.push("Es festivo: todas las horas cuentan como festivas")}
       else if(p.rest){total=worked;lines.push("Es tu día de descanso: todo cuenta como extra")}
       else{
-        const ps=toMin(p.e), pe=toMin(p.s), e=toMin(st.e); let sM=toMin(st.s); if(sM<e) sM+=1440;
+        const ps=toMin(p.e); let pe=toMin(p.s), e=toMin(st.e); if(pe<ps) pe+=1440; if(p.night && e<ps-720) e+=1440; let sM=toMin(st.s); while(sM<e) sM+=1440;
         before=Math.max(0,ps-e); after=Math.max(0,sM-pe);
         total=Math.max(0,worked-dur(p.e,p.s));
         if(before) lines.push(`${fmt(before)} antes de tu turno (${p.e})`);
@@ -373,7 +448,7 @@ let nomMode="est";
 // mode "total": cantidades del periodo · mode "dias": minutos por día (clave = fecha ISO)
 const sim={mode:"total", x:0, d:0, f:0, days:{}};
 const SIM_MAX={x:200*60, d:15, f:100*60, day:16*60};
-function shiftAvg(){return Math.round((dur(cfg.M.e,cfg.M.s)+dur(cfg.T.e,cfg.T.s))/2)}
+function shiftAvg(){const w=cfg.ciclo.dias.filter(isWork);if(!w.length)return 480;return Math.round(w.reduce((a,k)=>a+dur(cfg.turnos[k].e,cfg.turnos[k].s),0)/w.length)}
 function simDaysFrom(per){const t=todayISO();return per.start>t?per.start:t}
 function simAdd(per){
   if(sim.mode!=="dias") return {x:sim.x+sim.d*shiftAvg(), f:sim.f, n:0};
@@ -391,14 +466,14 @@ function simDayRows(per,E,keep){
   let html="";
   for(let d=parse(from), first=true; iso(d)<=per.end; d=addDays(d,1), first=false){
     const s=iso(d), p=plan(s), r=rec(s)||{}, v=sim.days[s]||0;
-    if(first || d.getDay()===1) html+=`<div class="wkhead"><span>Semana del ${mondayOf(d).getDate()} ${MON[mondayOf(d).getMonth()].slice(0,3)}</span><span>Turno de <strong>${shiftName(p.sh).toLowerCase()}</strong></span></div>`;
+    if(first || d.getDay()===1) html+=`<div class="wkhead"><span>Semana del ${mondayOf(d).getDate()} ${MON[mondayOf(d).getMonth()].slice(0,3)}</span><span>${weekLabel(mondayOf(d))}</span></div>`;
     const name=`${DOW[d.getDay()]} ${d.getDate()}`;
     if(r.tipo){html+=`<div class="simrow off"><div><b>${name}</b><small>${TIPOS[r.tipo]}</small></div></div>`;continue}
     const kind=p.fest?"fest":p.rest?"rest":"work";
-    const sub = kind==="work" ? `${shiftName(p.sh)} ${p.e}–${p.s} · lo que pongas es extra`
+    const sub = kind==="work" ? `${p.name} ${p.e}–${p.s} · lo que pongas es extra`
               : kind==="rest" ? "Descanso · todo cuenta como extra"
               : `Festivo${NAT[s]?" · "+NAT[s]:""} · horas festivas`;
-    const full=dur(cfg[p.sh].e,cfg[p.sh].s);
+    const full=dur(p.e,p.s);
     const money = v? `<em class="simeur num">≈ +${eur(v/60*(kind==="fest"?E.hf:E.hx)*keep)} netos</em>` : "";
     const fullBtn = kind!=="work" && v!==full ? `<button class="chip simfull" data-simfull="${s}" data-min="${full}">Turno entero · ${fmt(full)}</button>` : "";
     html+=`<div class="simrow ${kind} ${s===todayISO()?"today":""}"><div><b>${name}${s===todayISO()?" · hoy":""}</b><small>${sub}</small>${money}${fullBtn}</div>
@@ -532,13 +607,35 @@ function renderNomina(){
 }
 
 function renderAjustes(){
-  const d=new Date(), cur=shiftOf(d);
-  const yr=d.getFullYear();
   const nat=Object.entries(NAT).filter(([k])=>k>=todayISO()).slice(0,8);
   const own=[];
   Object.keys(months).sort().forEach(ym=>Object.entries(months[ym]||{}).forEach(([dd,r])=>{if(r.fest===true && !NAT[ym+"-"+dd])own.push(ym+"-"+dd)}));
   const fdate=s=>{const x=parse(s);return `${DOW[x.getDay()]} ${x.getDate()} ${MON[x.getMonth()]}`};
+  const used=TURNO_IDS.filter(k=>cfg.ciclo.dias.includes(k)&&cfg.turnos[k]);
+  const n=cfg.ciclo.dias.length;
   $("v-ajustes").innerHTML=`
+  <div class="card">
+    <h3>Tus turnos</h3>
+    <p class="hint">Ciclo de ${n} ${n===1?"día":"días"} que se repite sin fin. Lo que trabajes de más en un día de turno cuenta como extra.</p>
+    <ul class="fests">${used.map(k=>{const t=cfg.turnos[k];return `<li><span><span class="pill ${k}">${t.nombre}</span></span><span class="num">${t.e}–${t.s} · ${fmt(dur(t.e,t.s))}${toMin(t.s)<toMin(t.e)?" · cruza medianoche":""}</span></li>`}).join("")||`<li><span>Solo descansos</span><span></span></li>`}</ul>
+    <div class="h2" style="margin:14px 2px 8px"><h2 style="font-size:14px">Próximas dos semanas</h2></div>
+    ${stripHTML(todayISO(),14,cfg)}
+    <div class="grid2" style="margin-top:14px"><button class="btn soft small" id="t-hor">Cambiar horarios</button><button class="btn soft small" id="t-cic">Cambiar ciclo</button></div>
+    <button class="btn line small" id="t-tpl" style="width:100%;margin-top:8px">Empezar con una plantilla</button>
+  </div>
+  <div class="card">
+    <h3>Contrato y periodo</h3>
+    <div class="grid2" style="margin-top:10px"><label class="f">Horas semanales de contrato<input type="number" id="c-w" step="0.5" min="1" value="${cfg.weekly}"></label>
+      <label class="f">El periodo de extras empieza el día<select id="c-c">${Array.from({length:28},(_,i)=>i+1).map(n=>`<option value="${n}" ${Number(cfg.corte)===n?"selected":""}>${n}</option>`).join("")}</select></label></div>
+  </div>
+  <div class="card">
+    <h3>Festivos</h3>
+    <p class="hint">Los nacionales ya vienen marcados. Los de tu comunidad y tu ciudad márcalos tocando el día → <b>Festivo</b>.</p>
+    <ul class="fests">
+      ${nat.map(([k,v])=>`<li><span>${fdate(k)}</span><span>${v}</span></li>`).join("")}
+      ${own.map(k=>`<li><span>${fdate(k)}</span><span>Marcado por ti</span></li>`).join("")}
+    </ul>
+  </div>
   <div class="card">
     <h3>Fichar sin abrir la app</h3>
     <p class="hint">Con la app instalada, mantén pulsado su icono y arrastra <b>"Fichar ahora"</b> a la pantalla de inicio. Al tocarlo ficha la entrada (o la salida si ya habías entrado) con la hora exacta y calcula la extra con tu horario.</p>
@@ -553,45 +650,157 @@ function renderAjustes(){
     <h3>Aspecto</h3>
     <div class="seg"><button id="k-neon" aria-pressed="${skin()==="neon"}">Neón</button><button id="k-clasico" aria-pressed="${skin()==="clasico"}">Clásico</button></div>
   </div>
-  <div class="card">
-    <h3>¿Qué turno tienes esta semana?</h3>
-    <p class="hint">A partir de aquí la app alterna sola cada lunes.</p>
-    <div class="seg"><button id="s-M" aria-pressed="${cur==="M"}">Mañana</button><button id="s-T" aria-pressed="${cur==="T"}">Tarde</button></div>
-  </div>
-  <div class="card">
-    <h3>Horarios</h3>
-    <p class="hint">Lo que pase de aquí en un día laborable cuenta como extra.</p>
-    <div class="shiftrow"><span class="pill M">Mañana</span><label class="f">Entrada<input type="time" id="c-Me" value="${cfg.M.e}"></label><label class="f">Salida<input type="time" id="c-Ms" value="${cfg.M.s}"></label></div>
-    <div class="shiftrow"><span class="pill T">Tarde</span><label class="f">Entrada<input type="time" id="c-Te" value="${cfg.T.e}"></label><label class="f">Salida<input type="time" id="c-Ts" value="${cfg.T.s}"></label></div>
-    <div class="grid2" style="margin-top:12px">
-      <label class="f">Descanso en mañana<select id="c-Mr">${DOWL.map((n,i)=>`<option value="${i}" ${Number(cfg.M.rest)===i?"selected":""}>${n}</option>`).join("")}</select></label>
-      <label class="f">Descanso en tarde<select id="c-Tr">${DOWL.map((n,i)=>`<option value="${i}" ${Number(cfg.T.rest)===i?"selected":""}>${n}</option>`).join("")}</select></label>
-    </div>
-    <div class="grid2" style="margin-top:12px"><label class="f">Horas semanales de contrato<input type="number" id="c-w" step="0.5" min="1" value="${cfg.weekly}"></label>
-      <label class="f">El periodo de extras empieza el día<select id="c-c">${Array.from({length:28},(_,i)=>i+1).map(n=>`<option value="${n}" ${Number(cfg.corte)===n?"selected":""}>${n}</option>`).join("")}</select></label></div>
-  </div>
-  <div class="card">
-    <h3>Festivos</h3>
-    <p class="hint">Los nacionales ya vienen marcados. Los de tu comunidad y tu ciudad márcalos tocando el día → <b>Festivo</b>.</p>
-    <ul class="fests">
-      ${nat.map(([k,v])=>`<li><span>${fdate(k)}</span><span>${v}</span></li>`).join("")}
-      ${own.map(k=>`<li><span>${fdate(k)}</span><span>Marcado por ti</span></li>`).join("")}
-    </ul>
-  </div>
   <p class="note">Tus datos se guardan solo en este móvil. Haz una copia de seguridad de vez en cuando.</p>
   <p class="note">Mis Turnos · creada por <b>Francisco Muñoz Dorado</b><br><a href="https://github.com/francisykza/mis-turnos" target="_blank" rel="noopener" style="color:var(--fucsia)">Código en GitHub</a> · Licencia MIT · © 2026</p>`;
+  $("t-hor").onclick=()=>openWizard(2);
+  $("t-cic").onclick=()=>openWizard(3);
+  $("t-tpl").onclick=()=>openWizard(1);
   $("bk-exp").onclick=exportBackup;
   $("bk-imp").onclick=()=>$("bk-file").click();
   $("bk-file").onchange=e=>{const f=e.target.files[0];if(f)importBackup(f);e.target.value=""};
   $("k-neon").onclick=()=>{cfg.skin="neon";persistCfg();applySkin();renderAjustes()};
   $("k-clasico").onclick=()=>{cfg.skin="clasico";persistCfg();applySkin();renderAjustes()};
-  $("s-M").onclick=()=>setCur("M"); $("s-T").onclick=()=>setCur("T");
   const bind=(id,fn)=>$(id).addEventListener("change",e=>{fn(e.target.value);persistCfg();render();toast("Guardado")});
-  bind("c-Me",v=>cfg.M={...cfg.M,e:v}); bind("c-Ms",v=>cfg.M={...cfg.M,s:v});
-  bind("c-Te",v=>cfg.T={...cfg.T,e:v}); bind("c-Ts",v=>cfg.T={...cfg.T,s:v});
-  bind("c-Mr",v=>cfg.M={...cfg.M,rest:Number(v)}); bind("c-Tr",v=>cfg.T={...cfg.T,rest:Number(v)});
   bind("c-c",v=>{cfg.corte=Number(v);viewYM=null});
   bind("c-w",v=>cfg.weekly=Math.max(1,Number(v)||37.5));
+}
+// Tira de días con el turno de cada uno (src = {turnos, ciclo})
+function stripHTML(from,count,src){
+  let h="";
+  for(let i=0;i<count;i++){
+    const d=addDays(parse(from),i), s=iso(d), v=cycVal(s,src), w=isWork(v,src);
+    h+=`<div class="sd ${w?v:"R"} ${s===todayISO()?"today":""}"><b>${DOW[d.getDay()].slice(0,1)}</b><em class="num">${d.getDate()}</em><span>${w?src.turnos[v].nombre.slice(0,1):"·"}</span></div>`;
+  }
+  return `<div class="strip">${h}</div>`;
+}
+
+/* ---------- asistente de turnos ---------- */
+const TPLS=[
+  {id:"mt",   t:"Mañana y tarde",                    d:"Una semana de mañana y otra de tarde"},
+  {id:"mtn",  t:"Mañana, tarde y noche",             d:"Cada semana un turno"},
+  {id:"fijo", t:"Siempre el mismo horario",          d:"De lunes a viernes"},
+  {id:"xy",   t:"Días seguidos de trabajo y descanso", d:"Por ejemplo, 4 días sí y 4 no"},
+  {id:"libre",t:"Lo dibujo yo",                      d:"Marcas día a día cómo es tu ciclo"}
+];
+let wz=null;
+const rotate=(a,k)=>{const n=a.length;k=((k%n)+n)%n;return a.slice(k).concat(a.slice(0,k))};
+// Mueve el inicio del ciclo a «desde» sin cambiar qué toca cada día
+function reanchor(c,desde){
+  const n=c.dias.length, k=Math.round((parse(desde)-parse(c.inicio))/864e5);
+  return {inicio:desde, dias:rotate(c.dias,k)};
+}
+function wzStart(c){return c.dias.length%7===0 ? iso(mondayOf(new Date())) : todayISO()}
+function openWizard(step,first){
+  const c=clone(cfg.ciclo);
+  wz={step:step||1, first:!!first, tpl:null, turnos:clone(cfg.turnos), ciclo:reanchor(c,wzStart(c)),
+      weekly:cfg.weekly, corte:cfg.corte, xy:{on:4,off:4}, desde:first?"siempre":"hoy", touchedWeekly:false};
+  openSheet(""); drawWz();
+}
+function applyTpl(id){
+  const T=wz.turnos, mon=iso(mondayOf(new Date())), rep=(v,n)=>Array(n).fill(v);
+  const only=ids=>TURNO_IDS.forEach(k=>T[k].on=ids.includes(k));
+  if(id==="mt"){only(["M","T"]);wz.ciclo={inicio:mon,dias:[...rep("M",6),"D",...rep("T",6),"D"]}}
+  if(id==="mtn"){only(["M","T","N"]);wz.ciclo={inicio:mon,dias:[...rep("M",6),"D",...rep("T",6),"D",...rep("N",6),"D"]}}
+  if(id==="fijo"){only(["M"]);wz.ciclo={inicio:mon,dias:[...rep("M",5),"D","D"]}}
+  if(id==="xy"){only(["M"]);wz.ciclo={inicio:todayISO(),dias:[...rep("M",wz.xy.on),...rep("D",wz.xy.off)]}}
+  wz.tpl=id;
+}
+function wzOn(){return TURNO_IDS.filter(k=>wz.turnos[k].on)}
+function wzClean(){const on=wzOn();wz.ciclo.dias=wz.ciclo.dias.map(v=>on.includes(v)?v:"D")}
+function wzAvgWeekly(){
+  const d=wz.ciclo.dias, m=d.reduce((a,v)=>a+(wz.turnos[v]&&wz.turnos[v].on?dur(wz.turnos[v].e,wz.turnos[v].s):0),0);
+  return Math.round(m*7/d.length/30)/2;
+}
+function drawWz(){
+  const st=wz.step, T=wz.turnos;
+  let title, body, next="Siguiente";
+  if(st===1){
+    title="¿Cómo son tus turnos?";
+    body=`<p class="hint" style="margin:6px 0 12px;color:var(--muted)">Elige lo que más se parezca. Después podrás ajustar horarios y días.</p>
+      <div class="stack" style="margin-top:0">${TPLS.map(t=>`<button class="tplbtn" data-tpl="${t.id}" aria-pressed="${wz.tpl===t.id}"><b>${t.t}</b><small>${t.d}</small></button>`).join("")}</div>
+      ${wz.tpl==="xy"?`<div class="grid2" style="margin-top:12px">
+        <label class="f">Días de trabajo seguidos<input type="number" id="w-on" min="1" max="14" inputmode="numeric" value="${wz.xy.on}"></label>
+        <label class="f">Días de descanso<input type="number" id="w-off" min="1" max="14" inputmode="numeric" value="${wz.xy.off}"></label></div>`:""}`;
+  } else if(st===2){
+    title="Tus horarios";
+    body=`<p class="hint" style="margin:6px 0 4px;color:var(--muted)">Activa los turnos que haces y pon su hora de entrada y salida. Si la salida es antes que la entrada, es de noche y cruza la medianoche.</p>
+      ${TURNO_IDS.map(k=>{const t=T[k];return `<div class="trow ${t.on?"":"off"}">
+        <div class="trow-h"><button class="chip" data-ton="${k}" aria-pressed="${t.on}">${t.on?"✓ ":""}<span class="pill ${k}" style="padding:2px 8px">${t.nombre}</span></button>
+          ${t.on?`<span class="num tdur">${fmt(dur(t.e,t.s))}${toMin(t.s)<toMin(t.e)?" · noche":""}</span>`:""}</div>
+        ${t.on?`<div class="grid3"><label class="f">Nombre<input type="text" maxlength="14" data-tn="${k}" value="${t.nombre}"></label>
+          <label class="f">Entrada<input type="time" data-te="${k}" value="${t.e}"></label>
+          <label class="f">Salida<input type="time" data-ts="${k}" value="${t.s}"></label></div>`:""}
+      </div>`}).join("")}`;
+  } else if(st===3){
+    title="Tu ciclo";
+    const on=wzOn(), c=wz.ciclo, n=c.dias.length, d0=parse(c.inicio), lead=(d0.getDay()+6)%7;
+    let cells=Array.from({length:lead},()=>`<span></span>`).join("");
+    c.dias.forEach((v,i)=>{const d=addDays(d0,i), w=on.includes(v), s=iso(d);
+      cells+=`<button class="cyc ${w?v:"R"} ${s===todayISO()?"today":""}" data-cyc="${i}" aria-label="${DOWL[d.getDay()]} ${d.getDate()}: ${w?T[v].nombre:"descanso"}"><em class="num">${d.getDate()}</em><span>${w?T[v].nombre.slice(0,1):"·"}</span></button>`});
+    const tv=cycVal(todayISO(),{ciclo:c,turnos:T}), tw=on.includes(tv);
+    body=`<p class="hint" style="margin:6px 0 10px;color:var(--muted)">Empieza el ${parse(c.inicio).getDate()} de ${MON[parse(c.inicio).getMonth()]}. Toca un día para cambiarlo (${on.map(k=>T[k].nombre.toLowerCase()).concat("descanso").join(" → ")}). La app repite este ciclo sin fin.</p>
+      <div class="cycgrid"><b>L</b><b>M</b><b>X</b><b>J</b><b>V</b><b>S</b><b>D</b>${cells}</div>
+      <div class="calc num"><span>Hoy te toca <strong>${tw?T[tv].nombre.toLowerCase()+" "+T[tv].e+"–"+T[tv].s:"descanso"}</strong></span></div>
+      <div class="simrow" style="border-top:0"><div><b>Duración del ciclo</b><small>${n%7===0?`${n/7} ${n===7?"semana":"semanas"}`:`${n} días`}</small></div>
+        <div class="step sm"><button id="w-len-" aria-label="Un día menos" ${n<=1?"disabled":""}>−</button><output class="num">${n}</output><button id="w-len+" aria-label="Un día más" ${n>=42?"disabled":""}>+</button></div></div>
+      <p class="hint" style="margin:4px 0 6px;color:var(--muted)">¿No cuadra con lo que te toca? Corre el ciclo:</p>
+      <div class="chips"><button class="chip" data-rot="-7">‹ semana</button><button class="chip" data-rot="-1">‹ día</button><button class="chip" data-rot="1">día ›</button><button class="chip" data-rot="7">semana ›</button></div>`;
+  } else {
+    title="Contrato y periodo";
+    const avg=wzAvgWeekly();
+    if(wz.first && !wz.touchedWeekly) wz.weekly=avg||wz.weekly;
+    const hasPast=Object.keys(months).length>0;
+    body=`<p class="hint" style="margin:6px 0 12px;color:var(--muted)">Con tu ciclo te salen <b class="num">${String(avg).replace(".",",")} h</b> a la semana de media. Pon las de tu contrato: sirven para la barra semanal y el precio de la hora.</p>
+      <div class="grid2"><label class="f">Horas semanales de contrato<input type="number" id="w-week" step="0.5" min="1" value="${wz.weekly}"></label>
+        <label class="f">El periodo de extras empieza el día<select id="w-corte">${Array.from({length:28},(_,i)=>i+1).map(n=>`<option value="${n}" ${Number(wz.corte)===n?"selected":""}>${n}</option>`).join("")}</select></label></div>
+      ${hasPast?`<p class="hint" style="margin:16px 0 6px;color:var(--muted)">¿Desde cuándo valen estos turnos?</p>
+      <div class="seg"><button data-desde="hoy" aria-pressed="${wz.desde==="hoy"}">Desde hoy</button><button data-desde="siempre" aria-pressed="${wz.desde==="siempre"}">Desde siempre</button></div>
+      <p class="disc">${wz.desde==="hoy"?"Los días anteriores a hoy se siguen calculando con tus turnos de antes.":"Se recalcula todo lo pasado con estos turnos (útil si antes estaban mal puestos)."}</p>`:""}`;
+    next="Guardar";
+  }
+  $("sheet-in").innerHTML=`<div class="grab"></div>
+    <div class="wzsteps num">Paso ${st} de 4</div>
+    <h3 id="sh-title">${title}</h3>${body}
+    <div class="foot">${st>1?`<button class="btn line" id="w-back">Atrás</button>`:`<button class="btn line" data-close>${wz.first?"Ahora no":"Cancelar"}</button>`}<button class="btn primary" id="w-next">${next}</button></div>`;
+  // eventos
+  document.querySelectorAll("[data-tpl]").forEach(b=>b.onclick=()=>{wz.tpl=b.dataset.tpl;drawWz()});
+  const won=$("w-on"), woff=$("w-off");
+  if(won){won.onchange=()=>{wz.xy.on=Math.min(14,Math.max(1,Number(won.value)||4))};woff.onchange=()=>{wz.xy.off=Math.min(14,Math.max(1,Number(woff.value)||4))}}
+  document.querySelectorAll("[data-ton]").forEach(b=>b.onclick=()=>{const k=b.dataset.ton;if(T[k].on&&wzOn().length===1){toast("Deja al menos un turno");return}T[k].on=!T[k].on;drawWz()});
+  document.querySelectorAll("[data-tn]").forEach(i=>i.onchange=()=>{T[i.dataset.tn].nombre=i.value.trim()||TURNOS_DEF[i.dataset.tn].nombre;drawWz()});
+  document.querySelectorAll("[data-te]").forEach(i=>i.onchange=()=>{if(i.value){T[i.dataset.te].e=i.value;drawWz()}});
+  document.querySelectorAll("[data-ts]").forEach(i=>i.onchange=()=>{if(i.value){T[i.dataset.ts].s=i.value;drawWz()}});
+  document.querySelectorAll("[data-cyc]").forEach(b=>b.onclick=()=>{
+    const i=Number(b.dataset.cyc), opts=wzOn().concat("D"), cur=opts.indexOf(wz.ciclo.dias[i]);
+    wz.ciclo.dias[i]=opts[(cur+1)%opts.length]; drawWz();
+    const again=document.querySelector(`[data-cyc="${i}"]`); if(again) again.focus({preventScroll:true});
+  });
+  const lm=$("w-len-"), lp=$("w-len+");
+  if(lm){lm.onclick=()=>{if(wz.ciclo.dias.length>1){wz.ciclo.dias.pop();drawWz()}};lp.onclick=()=>{if(wz.ciclo.dias.length<42){wz.ciclo.dias.push("D");drawWz()}}}
+  document.querySelectorAll("[data-rot]").forEach(b=>b.onclick=()=>{wz.ciclo.dias=rotate(wz.ciclo.dias,Number(b.dataset.rot));drawWz()});
+  const ww=$("w-week"); if(ww) ww.onchange=()=>{wz.weekly=Math.max(1,Number(String(ww.value).replace(",","."))||wz.weekly);wz.touchedWeekly=true};
+  const wc=$("w-corte"); if(wc) wc.onchange=()=>{wz.corte=Number(wc.value)};
+  document.querySelectorAll("[data-desde]").forEach(b=>b.onclick=()=>{wz.desde=b.dataset.desde;drawWz()});
+  const bk=$("w-back"); if(bk) bk.onclick=()=>{wz.step--;drawWz();$("sheet").scrollTop=0};
+  $("w-next").onclick=()=>{
+    if(st===1){ if(!wz.tpl){toast("Elige una opción");return} if(wz.tpl!=="libre") applyTpl(wz.tpl) }
+    if(st===2) wzClean();
+    if(st<4){wz.step++;drawWz();$("sheet").scrollTop=0;return}
+    saveWizard();
+  };
+}
+function saveWizard(){
+  wzClean();
+  const ciclo=reanchor(wz.ciclo,wz.ciclo.inicio); // copia limpia
+  if(wz.desde==="hoy" && Object.keys(months).length){
+    const ayer=iso(addDays(new Date(),-1));
+    const antes=(cfg.antes||[]).filter(h=>h.hasta<=ayer);
+    if(!antes.some(h=>h.hasta===ayer)) antes.push({hasta:ayer, turnos:clone(cfg.turnos), ciclo:clone(cfg.ciclo)});
+    antes.sort((a,b)=>a.hasta<b.hasta?-1:1);
+    cfg.antes=antes;
+  } else if(wz.desde==="siempre"){ delete cfg.antes }
+  cfg.turnos=clone(wz.turnos); cfg.ciclo=ciclo; cfg.weekly=wz.weekly; cfg.corte=wz.corte;
+  persistCfg(); viewYM=null; nomYM=null; closeSheet(); render(); toast("Turnos guardados");
 }
 function exportBackup(){
   const data={app:"mis-turnos",version:DATA_V,exportado:new Date().toISOString(),cfg,months};
@@ -611,7 +820,7 @@ function importBackup(file){
       const d=JSON.parse(rd.result);
       if(!d||d.app!=="mis-turnos"||typeof d.months!=="object") throw 0;
       if((Number(d.version)||0)>DATA_V){toast("Esa copia es de una versión más nueva; actualiza la app");return}
-      const o=migrate(Object.assign({},DEF,d.cfg||{}), d.months||{}, Number(d.version)||0);
+      const o=migrate(d.cfg||{}, d.months||{}, Number(d.version)||0);
       cfg=o.cfg; months=o.months;
       ls.set("cfg",cfg); ls.set("months",months); ls.set("schema",DATA_V); viewYM=null; nomYM=null;
       render(); toast("Copia importada");
@@ -619,7 +828,6 @@ function importBackup(file){
   };
   rd.readAsText(file);
 }
-function setCur(sh){cfg.refMonday=iso(mondayOf(new Date()));cfg.refShift=sh;persistCfg();render();toast("Esta semana: "+shiftName(sh).toLowerCase())}
 
 /* ---------- editor de día ---------- */
 let editing=null;
@@ -632,7 +840,7 @@ function openEditor(s){
     $("sheet-in").innerHTML=`
       <div class="grab"></div>
       <h3 id="sh-title">${DOWL[d.getDay()]} ${d.getDate()} de ${MON[d.getMonth()]}</h3>
-      <div class="pills" style="margin-top:8px">${p.rest?`<span class="pill R">Descanso · semana de ${shiftName(p.sh).toLowerCase()}</span>`:`<span class="pill ${p.sh}">${shiftName(p.sh)} ${p.e}–${p.s}</span>`}</div>
+      <div class="pills" style="margin-top:8px">${p.rest?`<span class="pill R">Descanso</span>`:`<span class="pill ${p.sh}">${p.name} ${p.e}–${p.s}</span>`}</div>
       <div class="stack">
         <div class="chips" role="group" aria-label="Tipo de día">
           <button class="chip" data-tipo="" aria-pressed="${!editing.r.tipo}">Trabajo</button>
@@ -767,7 +975,7 @@ function quickClock(){
   let q; try{q=new URLSearchParams(location.search)}catch(e){return}
   if(!q.has("fichar")) return;
   try{history.replaceState(null,"",location.pathname)}catch(e){}
-  const t=todayISO(), r=Object.assign({},rec(t)||{}), p=plan(t), now=nowHM();
+  const od=nightOpen(), t=od||todayISO(), r=Object.assign({},rec(t)||{}), p=plan(t), now=nowHM();
   let title, lines=[];
   if(r.tipo){
     title="Hoy está marcado como "+TIPOS[r.tipo].toLowerCase(); lines.push("No he fichado nada. Si vas a trabajar, cámbialo desde Hoy.");
@@ -788,7 +996,7 @@ function quickClock(){
     else{
       r.s=now; setRec(t,r); const c=calc(t);
       title="Salida fichada · "+now;
-      lines.push(`Hoy: <b>${r.e} – ${r.s}</b> · ${fmt(c.worked)} trabajadas`);
+      lines.push(`${od?"Turno de anoche":"Hoy"}: <b>${r.e} – ${r.s}</b> · ${fmt(c.worked)} trabajadas`);
       if(c.extra) lines.push(`<b style="color:var(--fucsia)">+${fmt(c.extra)} de extra</b> sumadas al periodo`);
       if(c.festH) lines.push(`<b style="color:var(--fest-ink)">${fmt(c.festH)} festivas</b>`);
       if(c.falta) lines.push(`Te faltan ${fmt(c.falta)} para completar el turno`);
@@ -801,6 +1009,8 @@ function quickClock(){
   setTimeout(flash,150);
 }
 quickClock();
+// Primera vez (sin datos ni ajustes): asistente de turnos
+if(isNewUser && $("sheet").hidden) setTimeout(()=>openWizard(1,true),300);
 
 /* ---------- conexión con la cuenta ---------- */
 (async()=>{
@@ -811,7 +1021,7 @@ quickClock();
   const s=$("sync"); s.classList.add("on"); s.querySelector("span").textContent="Sincronizado";
   let first=true;
   db.doc("ajustes/config").onSnapshot(snap=>{
-    if(snap.exists){cfg=Object.assign({},DEF,JSON.parse(JSON.stringify(snap.data())));ls.set("cfg",cfg);render()}
+    if(snap.exists){cfg=normCfg(snap.data(),true);ls.set("cfg",cfg);render()}
     else if(first && ls.get("cfg")) persistCfg();
   },()=>{});
   db.collection("meses").onSnapshot(snap=>{
