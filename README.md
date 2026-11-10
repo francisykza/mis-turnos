@@ -24,7 +24,7 @@ Una app que vive en la pantalla de inicio del móvil y permite fichar en un toqu
 - **Turnos configurables:** un asistente con plantillas (mañana y tarde alternas, mañana-tarde-noche, horario fijo, días seguidos de trabajo y descanso) o un ciclo dibujado día a día, de hasta 6 semanas y 4 turnos. Admite turnos de noche que cruzan la medianoche. Si cambias de turnos «desde hoy», los periodos pasados no se recalculan.
 - **Contador de horas extra** del periodo de liquidación (configurable, por defecto del 20 al 19).
 - **Calculadora de extras:** "si entro a las 5:20, ¿cuántas extras me supone?"
-- **Festivos:** los nacionales vienen precargados y los autonómicos o locales se marcan con un toque.
+- **Festivos por comunidad autónoma:** los nacionales y los de tu comunidad salen del BOE (2026 y 2027 oficiales; los años siguientes, previstos con Semana Santa calculada). Los locales se marcan con un toque.
 - **Vacaciones y bajas** por rangos de días.
 - **Estimación de nómina:** salario base, complementos, prorrata de pagas, Seguridad Social, IRPF, precio de la hora extra y la festiva, y tramos de incapacidad temporal (0 % / 60 % / 75 %) o complemento por convenio.
 - **Simulador de horas:** "si este periodo echo 6 h extra y trabajo un descanso, ¿cuánto cobraría?". Suma lo imaginado a lo ya fichado, compara el neto y dice cuánto deja limpio cada hora extra y festiva. También día a día: eliges cuánto echarías cada día (con «turno entero» en descansos y festivos) y ves lo que te deja cada uno. No apunta nada en los fichajes.

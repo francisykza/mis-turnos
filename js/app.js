@@ -1,13 +1,5 @@
 (()=>{
 /* ---------- datos base ---------- */
-const NAT = {
-  "2026-01-01":"Año Nuevo","2026-01-06":"Reyes","2026-04-03":"Viernes Santo","2026-05-01":"Día del Trabajo",
-  "2026-08-15":"Asunción","2026-10-12":"Fiesta Nacional","2026-11-01":"Todos los Santos","2026-12-06":"Constitución",
-  "2026-12-08":"Inmaculada","2026-12-25":"Navidad",
-  "2027-01-01":"Año Nuevo","2027-01-06":"Reyes","2027-03-26":"Viernes Santo","2027-05-01":"Día del Trabajo",
-  "2027-08-15":"Asunción","2027-10-12":"Fiesta Nacional","2027-11-01":"Todos los Santos","2027-12-06":"Constitución",
-  "2027-12-08":"Inmaculada","2027-12-25":"Navidad"
-};
 // Valores por defecto de la versión 1 (solo mañana/tarde alternas). Sirven para convertir
 // los datos de quien ya usaba la app, aunque nunca hubiera tocado los ajustes.
 const LEGACY_DEF = {refMonday:"2026-09-21", refShift:"M", M:{e:"06:30",s:"12:55",rest:0}, T:{e:"14:00",s:"20:25",rest:6}, weekly:37.5, corte:20};
@@ -109,7 +101,9 @@ function nearShift(s,src){
   return TURNO_IDS.find(k=>src.turnos[k]&&src.turnos[k].on)||"M";
 }
 function rec(s){const m=months[s.slice(0,7)];return m? m[s.slice(8)]||null : null}
-function isFest(s){const r=rec(s);if(r&&r.fest!=null)return r.fest;return !!NAT[s]}
+// Festivo oficial del día según el año y la comunidad elegida (js/festivos.js)
+function festName(s){return window.MTFest.festivos(Number(s.slice(0,4)),cfg.ccaa||"")[s]||null}
+function isFest(s){const r=rec(s);if(r&&r.fest!=null)return r.fest;return !!festName(s)}
 function plan(s){
   const src=srcFor(s), v=cycVal(s,src), rest=!isWork(v,src), sh=rest?nearShift(s,src):v, c=src.turnos[sh]||TURNOS_DEF.M;
   return {sh, name:c.nombre, rest, fest:isFest(s), e:c.e, s:c.s, min: rest?0:dur(c.e,c.s), night: toMin(c.s)<toMin(c.e)};
@@ -178,7 +172,7 @@ function shiftName(sh){return (cfg.turnos[sh]&&cfg.turnos[sh].nombre)||"Turno"}
 function pillsFor(c){
   const p=c.p, out=[];
   if(c.r.tipo) out.push(`<span class="pill X">${TIPOS[c.r.tipo]}</span>`);
-  if(p.fest) out.push(`<span class="pill F">Festivo${NAT[c.iso]&&c.r.fest!==true?" · "+NAT[c.iso]:""}</span>`);
+  if(p.fest) out.push(`<span class="pill F">Festivo${festName(c.iso)&&c.r.fest!==true?" · "+festName(c.iso):""}</span>`);
   if(p.rest) out.push(`<span class="pill R">Descanso</span>`);
   else out.push(`<span class="pill ${p.sh}">${p.name} ${p.e}–${p.s}</span>`);
   return out.join("");
@@ -472,7 +466,7 @@ function simDayRows(per,E,keep){
     const kind=p.fest?"fest":p.rest?"rest":"work";
     const sub = kind==="work" ? `${p.name} ${p.e}–${p.s} · lo que pongas es extra`
               : kind==="rest" ? "Descanso · todo cuenta como extra"
-              : `Festivo${NAT[s]?" · "+NAT[s]:""} · horas festivas`;
+              : `Festivo${festName(s)?" · "+festName(s):""} · horas festivas`;
     const full=dur(p.e,p.s);
     const money = v? `<em class="simeur num">≈ +${eur(v/60*(kind==="fest"?E.hf:E.hx)*keep)} netos</em>` : "";
     const fullBtn = kind!=="work" && v!==full ? `<button class="chip simfull" data-simfull="${s}" data-min="${full}">Turno entero · ${fmt(full)}</button>` : "";
@@ -607,9 +601,11 @@ function renderNomina(){
 }
 
 function renderAjustes(){
-  const nat=Object.entries(NAT).filter(([k])=>k>=todayISO()).slice(0,8);
+  const yr=new Date().getFullYear(), cc=cfg.ccaa||"";
+  const nat=Object.entries(Object.assign({},MTFest.festivos(yr,cc),MTFest.festivos(yr+1,cc))).filter(([k])=>k>=todayISO()).sort().slice(0,8);
+  const prevYr=[yr,yr+1].filter(y=>cc&&!MTFest.oficial(y));
   const own=[];
-  Object.keys(months).sort().forEach(ym=>Object.entries(months[ym]||{}).forEach(([dd,r])=>{if(r.fest===true && !NAT[ym+"-"+dd])own.push(ym+"-"+dd)}));
+  Object.keys(months).sort().forEach(ym=>Object.entries(months[ym]||{}).forEach(([dd,r])=>{if(r.fest===true && !festName(ym+"-"+dd))own.push(ym+"-"+dd)}));
   const fdate=s=>{const x=parse(s);return `${DOW[x.getDay()]} ${x.getDate()} ${MON[x.getMonth()]}`};
   const used=TURNO_IDS.filter(k=>cfg.ciclo.dias.includes(k)&&cfg.turnos[k]);
   const n=cfg.ciclo.dias.length;
@@ -630,7 +626,9 @@ function renderAjustes(){
   </div>
   <div class="card">
     <h3>Festivos</h3>
-    <p class="hint">Los nacionales ya vienen marcados. Los de tu comunidad y tu ciudad márcalos tocando el día → <b>Festivo</b>.</p>
+    <label class="f" style="margin:8px 0 10px">Tu comunidad<select id="c-cc">${ccaaOptions(cc)}</select></label>
+    <p class="hint">${cc?"Vienen los festivos nacionales y los de tu comunidad según el BOE.":"Solo vienen los nacionales. Elige tu comunidad para añadir los suyos."} Los de tu ciudad (2 al año) márcalos tocando el día → <b>Festivo</b>.${cc==="CN"?" En Canarias, la fiesta de tu isla también se marca a mano.":""}${prevYr.length?` <b>${prevYr.join(" y ")}</b>: calendario aún sin publicar en el BOE, es una previsión.`:""}</p>
+    <p class="hint" style="margin-top:-6px">Próximos:</p>
     <ul class="fests">
       ${nat.map(([k,v])=>`<li><span>${fdate(k)}</span><span>${v}</span></li>`).join("")}
       ${own.map(k=>`<li><span>${fdate(k)}</span><span>Marcado por ti</span></li>`).join("")}
@@ -662,8 +660,10 @@ function renderAjustes(){
   $("k-clasico").onclick=()=>{cfg.skin="clasico";persistCfg();applySkin();renderAjustes()};
   const bind=(id,fn)=>$(id).addEventListener("change",e=>{fn(e.target.value);persistCfg();render();toast("Guardado")});
   bind("c-c",v=>{cfg.corte=Number(v);viewYM=null});
+  bind("c-cc",v=>{cfg.ccaa=v});
   bind("c-w",v=>cfg.weekly=Math.max(1,Number(v)||37.5));
 }
+function ccaaOptions(sel){return `<option value="" ${!sel?"selected":""}>Solo festivos nacionales</option>`+MTFest.CCAA.map(([k,n])=>`<option value="${k}" ${sel===k?"selected":""}>${n}</option>`).join("")}
 // Tira de días con el turno de cada uno (src = {turnos, ciclo})
 function stripHTML(from,count,src){
   let h="";
@@ -693,7 +693,7 @@ function wzStart(c){return c.dias.length%7===0 ? iso(mondayOf(new Date())) : tod
 function openWizard(step,first){
   const c=clone(cfg.ciclo);
   wz={step:step||1, first:!!first, tpl:null, turnos:clone(cfg.turnos), ciclo:reanchor(c,wzStart(c)),
-      weekly:cfg.weekly, corte:cfg.corte, xy:{on:4,off:4}, desde:first?"siempre":"hoy", touchedWeekly:false};
+      weekly:cfg.weekly, corte:cfg.corte, xy:{on:4,off:4}, desde:first?"siempre":"hoy", touchedWeekly:false, ccaa:cfg.ccaa||""};
   openSheet(""); drawWz();
 }
 function applyTpl(id){
@@ -753,6 +753,7 @@ function drawWz(){
     body=`<p class="hint" style="margin:6px 0 12px;color:var(--muted)">Con tu ciclo te salen <b class="num">${String(avg).replace(".",",")} h</b> a la semana de media. Pon las de tu contrato: sirven para la barra semanal y el precio de la hora.</p>
       <div class="grid2"><label class="f">Horas semanales de contrato<input type="number" id="w-week" step="0.5" min="1" value="${wz.weekly}"></label>
         <label class="f">El periodo de extras empieza el día<select id="w-corte">${Array.from({length:28},(_,i)=>i+1).map(n=>`<option value="${n}" ${Number(wz.corte)===n?"selected":""}>${n}</option>`).join("")}</select></label></div>
+      <label class="f" style="margin-top:12px">Tu comunidad, para los festivos<select id="w-cc">${ccaaOptions(wz.ccaa)}</select></label>
       ${hasPast?`<p class="hint" style="margin:16px 0 6px;color:var(--muted)">¿Desde cuándo valen estos turnos?</p>
       <div class="seg"><button data-desde="hoy" aria-pressed="${wz.desde==="hoy"}">Desde hoy</button><button data-desde="siempre" aria-pressed="${wz.desde==="siempre"}">Desde siempre</button></div>
       <p class="disc">${wz.desde==="hoy"?"Los días anteriores a hoy se siguen calculando con tus turnos de antes.":"Se recalcula todo lo pasado con estos turnos (útil si antes estaban mal puestos)."}</p>`:""}`;
@@ -780,6 +781,7 @@ function drawWz(){
   document.querySelectorAll("[data-rot]").forEach(b=>b.onclick=()=>{wz.ciclo.dias=rotate(wz.ciclo.dias,Number(b.dataset.rot));drawWz()});
   const ww=$("w-week"); if(ww) ww.onchange=()=>{wz.weekly=Math.max(1,Number(String(ww.value).replace(",","."))||wz.weekly);wz.touchedWeekly=true};
   const wc=$("w-corte"); if(wc) wc.onchange=()=>{wz.corte=Number(wc.value)};
+  const wcc=$("w-cc"); if(wcc) wcc.onchange=()=>{wz.ccaa=wcc.value};
   document.querySelectorAll("[data-desde]").forEach(b=>b.onclick=()=>{wz.desde=b.dataset.desde;drawWz()});
   const bk=$("w-back"); if(bk) bk.onclick=()=>{wz.step--;drawWz();$("sheet").scrollTop=0};
   $("w-next").onclick=()=>{
@@ -799,7 +801,7 @@ function saveWizard(){
     antes.sort((a,b)=>a.hasta<b.hasta?-1:1);
     cfg.antes=antes;
   } else if(wz.desde==="siempre"){ delete cfg.antes }
-  cfg.turnos=clone(wz.turnos); cfg.ciclo=ciclo; cfg.weekly=wz.weekly; cfg.corte=wz.corte;
+  cfg.turnos=clone(wz.turnos); cfg.ciclo=ciclo; cfg.weekly=wz.weekly; cfg.corte=wz.corte; cfg.ccaa=wz.ccaa;
   persistCfg(); viewYM=null; nomYM=null; closeSheet(); render(); toast("Turnos guardados");
 }
 function exportBackup(){
@@ -833,7 +835,7 @@ function importBackup(file){
 let editing=null;
 function openEditor(s){
   const d=parse(s), r=Object.assign({},rec(s)||{}), p=plan(s);
-  editing={s, r, festDefault: !!NAT[s]};
+  editing={s, r, festDefault: !!festName(s)};
   const draw=()=>{
     const fest = editing.r.fest!=null? editing.r.fest : editing.festDefault;
     const c=(()=>{const save=rec(s);const ym=s.slice(0,7),dd=s.slice(8);months[ym]=Object.assign({},months[ym],{[dd]:editing.r});const out=calc(s);if(save)months[ym][dd]=save;else delete months[ym][dd];return out})();
@@ -854,7 +856,7 @@ function openEditor(s){
         </div>
         ${p.rest?"":`<button class="btn soft small" id="e-full">Rellenar con mi turno (${p.e}–${p.s})</button>`}
         <label class="f">Extra apuntada a mano (minutos)<input type="number" id="e-x" min="0" step="5" inputmode="numeric" value="${editing.r.x||""}" placeholder="0"></label>`}
-        <div class="chips"><button class="chip fest" id="e-fest" aria-pressed="${fest}">${fest?"✓ Festivo":"Marcar como festivo"}</button>${NAT[s]?`<span style="font-size:13px;color:var(--muted);align-self:center">${NAT[s]}</span>`:""}</div>
+        <div class="chips"><button class="chip fest" id="e-fest" aria-pressed="${fest}">${fest?"✓ Festivo":"Marcar como festivo"}</button>${festName(s)?`<span style="font-size:13px;color:var(--muted);align-self:center">${festName(s)}</span>`:""}</div>
       </div>
       <div class="calc num"><span>Trabajadas <strong>${fmt(c.worked)}</strong></span><span>Extra <strong style="color:var(--fucsia)">${fmt(c.extra)}</strong></span><span>Festivas <strong style="color:var(--fest-ink)">${fmt(c.festH)}</strong></span></div>
       <div class="foot"><button class="btn line" id="e-clear">Borrar</button><button class="btn primary" id="e-save">Guardar</button></div>`;
