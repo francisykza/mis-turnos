@@ -27,6 +27,7 @@ Una app que vive en la pantalla de inicio del móvil y permite fichar en un toqu
 - **Festivos:** los nacionales vienen precargados y los autonómicos o locales se marcan con un toque.
 - **Vacaciones y bajas** por rangos de días.
 - **Estimación de nómina:** salario base, complementos, prorrata de pagas, Seguridad Social, IRPF, precio de la hora extra y la festiva, y tramos de incapacidad temporal (0 % / 60 % / 75 %) o complemento por convenio.
+- **Simulador de horas:** "si este periodo echo 6 h extra y trabajo un descanso, ¿cuánto cobraría?". Suma lo imaginado a lo ya fichado, compara el neto y dice cuánto deja limpio cada hora extra y festiva. No apunta nada en los fichajes.
 - **Copia de seguridad** en JSON (exportar e importar).
 - **Funciona sin conexión** y se instala como una app nativa.
 - **Dos aspectos visuales:** "Neón", con lluvia animada en canvas, y "Clásico".
