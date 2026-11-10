@@ -369,18 +369,56 @@ function estimate(per, add){
 }
 /* ---------- simulador: «¿y si echo X horas?» (no guarda nada) ---------- */
 let nomMode="est";
-const sim={x:0, d:0, f:0}; // x: min extra en días de trabajo · d: descansos trabajados · f: min en festivo
-const SIM_MAX={x:200*60, d:15, f:100*60};
+// Lo simulado no se guarda: vive solo mientras la app está abierta.
+// mode "total": cantidades del periodo · mode "dias": minutos por día (clave = fecha ISO)
+const sim={mode:"total", x:0, d:0, f:0, days:{}};
+const SIM_MAX={x:200*60, d:15, f:100*60, day:16*60};
 function shiftAvg(){return Math.round((dur(cfg.M.e,cfg.M.s)+dur(cfg.T.e,cfg.T.s))/2)}
+function simDaysFrom(per){const t=todayISO();return per.start>t?per.start:t}
+function simAdd(per){
+  if(sim.mode!=="dias") return {x:sim.x+sim.d*shiftAvg(), f:sim.f, n:0};
+  const from=simDaysFrom(per); let x=0,f=0,n=0;
+  Object.entries(sim.days).forEach(([s,v])=>{
+    if(!v||s<from||s>per.end) return;
+    const r=rec(s); if(r&&r.tipo) return;
+    if(plan(s).fest) f+=v; else x+=v; n++;
+  });
+  return {x,f,n};
+}
+function simDayRows(per,E,keep){
+  const from=simDaysFrom(per);
+  if(from>per.end) return `<div class="list"><p class="note" style="margin:16px">Este periodo ya ha terminado. Usa «Total del periodo» para hacer cuentas sobre él.</p></div>`;
+  let html="";
+  for(let d=parse(from), first=true; iso(d)<=per.end; d=addDays(d,1), first=false){
+    const s=iso(d), p=plan(s), r=rec(s)||{}, v=sim.days[s]||0;
+    if(first || d.getDay()===1) html+=`<div class="wkhead"><span>Semana del ${mondayOf(d).getDate()} ${MON[mondayOf(d).getMonth()].slice(0,3)}</span><span>Turno de <strong>${shiftName(p.sh).toLowerCase()}</strong></span></div>`;
+    const name=`${DOW[d.getDay()]} ${d.getDate()}`;
+    if(r.tipo){html+=`<div class="simrow off"><div><b>${name}</b><small>${TIPOS[r.tipo]}</small></div></div>`;continue}
+    const kind=p.fest?"fest":p.rest?"rest":"work";
+    const sub = kind==="work" ? `${shiftName(p.sh)} ${p.e}–${p.s} · lo que pongas es extra`
+              : kind==="rest" ? "Descanso · todo cuenta como extra"
+              : `Festivo${NAT[s]?" · "+NAT[s]:""} · horas festivas`;
+    const full=dur(cfg[p.sh].e,cfg[p.sh].s);
+    const money = v? `<em class="simeur num">≈ +${eur(v/60*(kind==="fest"?E.hf:E.hx)*keep)} netos</em>` : "";
+    const fullBtn = kind!=="work" && v!==full ? `<button class="chip simfull" data-simfull="${s}" data-min="${full}">Turno entero · ${fmt(full)}</button>` : "";
+    html+=`<div class="simrow ${kind} ${s===todayISO()?"today":""}"><div><b>${name}${s===todayISO()?" · hoy":""}</b><small>${sub}</small>${money}${fullBtn}</div>
+      <div class="step sm"><button data-simday="${s}" data-step="-30" aria-label="Quitar media hora el ${name}" ${v<=0?"disabled":""}>−</button><output class="num" aria-live="polite">${v?(kind==="work"?"+":"")+fmt(v):"—"}</output><button data-simday="${s}" data-step="30" aria-label="Añadir media hora el ${name}">+</button></div></div>`;
+  }
+  return `<div class="list simdays">${html}</div>`;
+}
 function renderSim(per,E){
-  const n=E.n, sMin=shiftAvg();
-  const S=estimate(per,{x:sim.x+sim.d*sMin, f:sim.f});
+  const n=E.n, sMin=shiftAvg(), add=simAdd(per);
+  const S=estimate(per,{x:add.x, f:add.f});
   const keep=1-((Number(n.ss)||0)+(Number(n.irpf)||0))/100;
-  const diff=S.neto-E.neto, any=sim.x||sim.d||sim.f;
-  const t=todayISO(), fut=per.start>t, past=per.end<t;
+  const diff=S.neto-E.neto, any=add.x||add.f;
+  const t=todayISO(), fut=per.start>t, past=per.end<t, dias=sim.mode==="dias";
   const step=(k,label,sub,val,st)=>`
     <div class="simrow"><div><b>${label}</b><small>${sub}</small></div>
       <div class="step"><button data-sim="${k}" data-step="${-st}" aria-label="Quitar a ${label.toLowerCase()}" ${sim[k]<=0?"disabled":""}>−</button><output class="num" aria-live="polite">${val}</output><button data-sim="${k}" data-step="${st}" aria-label="Añadir a ${label.toLowerCase()}">+</button></div></div>`;
+  const hint = dias
+    ? (fut?"Elige cuánto echarías cada día. Cada media hora se suma a ese día.":past?"":"Desde hoy hasta el cierre. Se suma a lo que ya llevas fichado.")
+    : (fut?"Periodo futuro: solo cuenta lo que pongas aquí.":past?"Periodo cerrado: se suma a lo que ya fichaste.":"Se suma a lo que ya llevas fichado en este periodo.");
+  const anyInput = sim.x||sim.d||sim.f||Object.values(sim.days).some(Boolean);
   return `
     <div class="nres">
       <small>${any?"Cobrarías unos":"Neto estimado ahora"}</small>
@@ -389,12 +427,15 @@ function renderSim(per,E){
     </div>
     <div class="card">
       <h3>¿Cuánto piensas echar?</h3>
-      <p class="hint">${fut?"Periodo futuro: solo cuenta lo que pongas aquí.":past?"Periodo cerrado: se suma a lo que ya fichaste.":"Se suma a lo que ya llevas fichado en este periodo."}</p>
+      <div class="seg" role="group" aria-label="Cómo simular" style="margin:10px 0 12px"><button id="sm-total" aria-pressed="${!dias}">Total del periodo</button><button id="sm-dias" aria-pressed="${dias}">Día a día</button></div>
+      ${hint?`<p class="hint">${hint}</p>`:""}
+      ${dias&&past?"":dias?`<div class="calc num" style="margin-top:0"><span>Extra <strong style="color:var(--fucsia)">${fmt(add.x)}</strong></span><span>Festivas <strong style="color:var(--fest-ink)">${fmt(add.f)}</strong></span><span>en <strong>${add.n}</strong> ${add.n===1?"día":"días"}</span></div>`:`
       ${step("x","Horas extra","en días de trabajo",fmt(sim.x),30)}
       ${step("d","Descansos trabajados",`≈ ${fmt(sMin)} cada uno, todo extra`,sim.d,1)}
-      ${step("f","Horas en festivo",`se pagan a ${eur(S.hf)}/h`,fmt(sim.f),30)}
-      ${any?`<button class="btn line small" id="sim-reset" style="width:100%;margin-top:12px">Empezar de cero</button>`:""}
+      ${step("f","Horas en festivo",`se pagan a ${eur(S.hf)}/h`,fmt(sim.f),30)}`}
+      ${anyInput?`<button class="btn line small" id="sim-reset" style="width:100%;margin-top:12px">Empezar de cero</button>`:""}
     </div>
+    ${dias?simDayRows(per,E,keep):""}
     <div class="card">
       <table class="ntable cmp num">
         <tr class="hd"><td></td><td>${fut?"Previsto":"Fichado"}</td><td>Simulado</td></tr>
@@ -407,15 +448,27 @@ function renderSim(per,E){
       <p class="disc">Simulación orientativa: no se apunta nada en tus fichajes. Usa tu IRPF actual (${n.irpf} %); si echas muchas extras durante el año, la empresa puede subirte la retención en nóminas siguientes.</p>
     </div>`;
 }
+function refocus(sel,alt){const a=document.querySelector(sel);if(a&&!a.disabled){a.focus({preventScroll:true});return}const b=alt&&document.querySelector(alt);if(b)b.focus({preventScroll:true})}
 function bindSim(){
   document.querySelectorAll("[data-sim]").forEach(b=>b.onclick=()=>{
     const k=b.dataset.sim, st=Number(b.dataset.step);
     sim[k]=Math.min(SIM_MAX[k],Math.max(0,sim[k]+st));
     renderNomina();
-    const again=document.querySelector(`[data-sim="${k}"][data-step="${st}"]`);
-    if(again && !again.disabled) again.focus(); else{const o=document.querySelector(`[data-sim="${k}"][data-step="${-st}"]`);if(o)o.focus()}
+    refocus(`[data-sim="${k}"][data-step="${st}"]`,`[data-sim="${k}"][data-step="${-st}"]`);
   });
-  const r=$("sim-reset"); if(r) r.onclick=()=>{sim.x=0;sim.d=0;sim.f=0;renderNomina()};
+  document.querySelectorAll("[data-simday]").forEach(b=>b.onclick=()=>{
+    const s=b.dataset.simday, st=Number(b.dataset.step);
+    sim.days[s]=Math.min(SIM_MAX.day,Math.max(0,(sim.days[s]||0)+st));
+    renderNomina();
+    refocus(`[data-simday="${s}"][data-step="${st}"]`,`[data-simday="${s}"][data-step="${-st}"]`);
+  });
+  document.querySelectorAll("[data-simfull]").forEach(b=>b.onclick=()=>{
+    const s=b.dataset.simfull; sim.days[s]=Number(b.dataset.min);
+    renderNomina(); refocus(`[data-simday="${s}"][data-step="-30"]`);
+  });
+  $("sm-total").onclick=()=>{sim.mode="total";renderNomina()};
+  $("sm-dias").onclick=()=>{sim.mode="dias";renderNomina()};
+  const r=$("sim-reset"); if(r) r.onclick=()=>{sim.x=0;sim.d=0;sim.f=0;sim.days={};renderNomina()};
 }
 
 function renderNomina(){

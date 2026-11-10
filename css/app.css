@@ -144,6 +144,17 @@ section.block{margin-top:22px}
 .step button:disabled{opacity:.35;cursor:default}
 .step output{min-width:66px;text-align:center;font:800 18px var(--display)}
 .simdiff{color:var(--hero-ink);font-weight:800}
+.simdays .simrow{padding:10px 16px}
+.simdays .wkhead+.simrow{border-top:0}
+.simrow.today{background:var(--rosa)}
+.simrow.rest b{color:var(--muted)}
+.simrow.fest small{color:var(--fest-ink)}
+.simrow.off{opacity:.55}
+.simeur{display:block;font-style:normal;font-size:12px;font-weight:700;color:var(--fucsia);margin-top:3px}
+.simrow.fest .simeur{color:var(--fest-ink)}
+.chip.simfull{margin-top:6px;padding:5px 10px;font-size:12px}
+.step.sm button{width:38px;height:38px;font-size:19px;border-radius:11px}
+.step.sm output{min-width:60px;font-size:15px}
 .ntable.cmp td:nth-child(2){text-align:right;white-space:nowrap;padding-left:10px;color:var(--muted);font-weight:600}
 .ntable.cmp tr.hd td{font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding-top:0}
 
@@ -279,6 +290,8 @@ nav.tabs button[aria-current="page"]{color:var(--fucsia);background:var(--rosa)}
 [data-skin="neon"] .qbtn[aria-pressed="true"]{background:var(--fucsia);border-color:var(--fucsia);color:#12001A;box-shadow:0 0 14px rgba(255,43,214,.6)}
 [data-skin="neon"] .step button{background:transparent;border-color:rgba(34,243,255,.35);color:var(--cyan);font-family:var(--mono)}
 [data-skin="neon"] .step output{font-family:var(--display);color:#fff;text-shadow:0 0 8px rgba(255,43,214,.6)}
+[data-skin="neon"] .simrow.today{background:rgba(255,43,214,.1)}
+[data-skin="neon"] .simeur{text-shadow:0 0 6px currentColor}
 [data-skin="neon"] .simdiff{color:var(--cyan);text-shadow:0 0 8px rgba(34,243,255,.6)}
 [data-skin="neon"] .calcbig{background:transparent;border:1px solid var(--fucsia);box-shadow:inset 0 0 20px rgba(255,43,214,.15)}
 [data-skin="neon"] .calcbig .n{font-family:var(--display);color:#fff;text-shadow:0 0 10px var(--fucsia)}
