@@ -442,7 +442,7 @@ let nomMode="est";
 // mode "total": cantidades del periodo · mode "dias": minutos por día (clave = fecha ISO)
 const sim={mode:"total", x:0, d:0, f:0, days:{}};
 const SIM_MAX={x:200*60, d:15, f:100*60, day:16*60};
-function shiftAvg(){const w=cfg.ciclo.dias.filter(isWork);if(!w.length)return 480;return Math.round(w.reduce((a,k)=>a+dur(cfg.turnos[k].e,cfg.turnos[k].s),0)/w.length)}
+function shiftAvg(){const w=cfg.ciclo.dias.filter(v=>isWork(v,cfg));if(!w.length)return 480;return Math.round(w.reduce((a,k)=>a+dur(cfg.turnos[k].e,cfg.turnos[k].s),0)/w.length)}
 function simDaysFrom(per){const t=todayISO();return per.start>t?per.start:t}
 function simAdd(per){
   if(sim.mode!=="dias") return {x:sim.x+sim.d*shiftAvg(), f:sim.f, n:0};
