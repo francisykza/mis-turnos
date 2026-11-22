@@ -1290,7 +1290,7 @@ function mountScenes(){
       return {look:rpgLook(R),boss:R.boss,rain:R.event.id==="lluvia"||((h>=21||h<6)&&d%3===0),taunts:taunts()}},cv.dataset.mode)});
   });
 }
-function activeScene(){const s=scenes.find(x=>x.cv.isConnected&&x.cv.offsetParent);return s?s.sc:null}
+function activeScene(){if(nightScene&&!$("quick").hidden)return nightScene;const s=scenes.find(x=>x.cv.isConnected&&x.cv.offsetParent);return s?s.sc:null}
 // Tras cambiar un día: animación en la escena visible (golpe, crítico, experiencia, monedas, nivel)
 function rpgFx(b4){
   if(!cfg.rpg||!b4) return;
@@ -1450,13 +1450,13 @@ function doPunch(q){
 function openActions(){
   const q=quickState(), fest=isFest(q.t), game=!!cfg.rpg;
   const tile=(id,ico,label,dis)=>`<button class="atile" data-a="${id}" ${dis?"disabled":""}><i aria-hidden="true">${ico}</i><span>${label}</span></button>`;
-  openSheet(`<div class="grab"></div><h3 id="sh-title">${game?"Objetos":"Apuntar"}</h3>
+  openSheet(`<div class="grab"></div><h3 id="sh-title">${game?"Mochila":"Apuntar"}</h3>
     <div class="atiles">
       ${tile("x30","＋","30 min extra",q.mode==="tipo")}${tile("x60","＋","1 h extra",q.mode==="tipo")}${tile("xo","⏱","Otra extra",q.mode==="tipo")}
       ${tile("full","✓","Turno completo",!(q.mode==="in"&&!q.p.rest&&!q.p.fest))}${tile("fest","★",fest?"Quitar festivo":"Es festivo")}${tile("edit","✎","Editar el día")}
       ${tile("vac","☀","Vacaciones")}${tile("baja","✚","Baja")}${tile("app","→","Entrar en la app")}
     </div>`);
-  if(game) MTScene.sfx.open();
+  if(game) MTNight.sfx.shutter();
   $("sheet-in").querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{
     const a=b.dataset.a, cur=rec(q.s)||{};
     if(a==="x30"||a==="x60"){closeSheet();const m=a==="x30"?30:60;punch(q.s,Object.assign({},cur,{x:(Number(cur.x)||0)+m}),`+${fmt(m)} de extra apuntadas`)}
@@ -1469,6 +1469,69 @@ function openActions(){
   });
 }
 var typer=null, lastLine="";
+/* ---------- «La jornada»: escena de la puerta del trabajo (js/noche.js) ---------- */
+var nightScene=null, nightState=null, nightLines=[], nightIdx=0;
+// Lo que necesita la escena: si te espera fuera, estás dentro o ya te fuiste; lluvia; tu equipo
+function nightOf(q,R){
+  const mode=q.mode==="out"||q.mode==="outn"?"work":q.mode==="done"?"done":q.mode==="tipo"||q.p.rest?"off":"in";
+  const h=new Date().getHours(), d=new Date().getDate(), eq=rpgInv().equip, it=id=>MTRPG.SHOP.find(x=>x.id===id)||{};
+  const look={};
+  if(eq.H){look.hat=it(eq.H).c;look.hat2=it(eq.H).c2}
+  if(eq.B){look.coat=it(eq.B).c;look.coat2=it(eq.B).c2}
+  if(eq.C){look.scarf=it(eq.C).c;look.scarf2=it(eq.C).c}
+  if(eq.V) look.visor=it(eq.V).c;
+  if(eq.P==="p-dron") look.drone=it(eq.P).c;
+  if(eq.P==="p-gato") look.cat="#c8783a";
+  return {mode, ficha:nowHM(), rain:R.event.id==="lluvia"||((h>=21||h<6)&&d%3===0), look};
+}
+function mountNight(){
+  const cv=$("q-scene"); if(!cv||nightScene) return;
+  MTNight.setSound(cfg.rpgSound!==false);
+  nightScene=MTNight.mount(cv,()=>nightState);
+  nightScene.onEvent=id=>{const l=NIGHT_EVENTS[id];if(l)nightSay(l)};
+}
+var NIGHT_EVENTS={
+  reparto:{who:"paco",exp:"normal",text:"El de las cenas. Reparte comida a gente que duerme. Qué envidia, oye."},
+  apagon:{who:"paco",exp:"shock",text:"¡Anda! Se ha ido la luz. Tú tranquilo, que el reloj tiene pila."},
+  luz:{who:"paco",exp:"normal",text:"Ya volvió. La compañía, que lo hace por darle emoción a la noche."},
+  regalo:{who:"gata",exp:"awake",text:"Miau. (Te ha traído un tornillo. Es su forma de decir hola.)"},
+  estrella:{who:"paco",exp:"happy",text:"Una estrella fugaz. Yo pedí jubilarme y aquí sigo. Pide tú algo mejor."},
+  dentro:{who:"gata",exp:"awake",text:"Miau."},
+  fuera:{who:"paco",exp:"happy",text:"Hasta mañana, chaval. Descansa, que te lo has ganado."}
+};
+// Frases según cómo va tu día. Se pasa a la siguiente tocando el cuadro.
+function pacoLines(q,I,R){
+  const P=(exp,text)=>({who:"paco",exp,text}), p=q.p, r=q.r, now=nowHM(), out=[];
+  const night=new Date().getHours()>=21||new Date().getHours()<6;
+  if(q.mode==="tipo") out.push(q.r.tipo==="vac"?P("happy","De vacaciones y mirando el reloj. Anda, vete por ahí, que esto sigue aquí."):q.r.tipo==="baja"?P("normal","Estás de baja. Cuídate, que Mancha y yo vigilamos la puerta."):P("normal",`Hoy tienes ${TIPOS[q.r.tipo].toLowerCase()}. Aquí no se te espera.`));
+  else if(q.mode==="in"){
+    if(p.rest) out.push(P("sleepy","Hoy libras. ¿Qué haces por aquí? Vete a descansar, anda."));
+    else if(p.fest) out.push(P("normal","Hoy es fiesta. Si entras, lo que trabajes cuenta como horas festivas."));
+    else{const diff=toMin(p.e)-toMin(now);
+      out.push(diff>0?P("normal",`Entras a las ${p.e}. Aún te quedan ${fmt(diff)}. Te guardo el sitio.`)
+        :-diff<p.min?P(-diff>15?"shock":"normal",`Tu turno empezó hace ${fmt(-diff)}. Ficha, que el reloj no perdona.`)
+        :P("normal","Tu turno de hoy ya pasó. Si viniste, apúntalo en la mochila."))}
+  }else if(q.mode==="out"||q.mode==="outn"){
+    if(I.live<3) out.push(P("happy",`Fichado a las ${r.e}. ${!p.rest&&!p.fest&&toMin(r.e)<=toMin(p.e)+5?"Puntual, como el último tren.":"Más vale tarde que nunca."}`));
+    out.push(P(night?"sleepy":"normal",`Llevas ${fmt(I.live)} dentro. ${q.mode==="out"&&!p.rest&&!p.fest?`Sales a las ${p.s}.`:"Ficha la salida al terminar."}`));
+  }else out.push(P("happy",`Hoy ${fmt(q.c.worked)}${q.c.extra?`, con ${fmt(q.c.extra)} de extra`:""}. Hasta mañana, chaval.`));
+  out.push(P("normal",`En el tablón pone: «${R.event.name}». ${R.event.desc}`));
+  out.push(P("normal",`Vas por el nivel ${R.L}, ${R.rank.name.toLowerCase()}. ${R.streak>1?`Llevas ${R.streak} días seguidos fichando.`:"Cada día fichado suma."}`));
+  const FL=["Dicen que esta noche refresca. Lo dicen todas las noches.","La máquina de café se ha vuelto a tragar una moneda. Ya van tres esta semana.","Mancha duerme en esa caja desde hace años. Más fija que yo en la plantilla.","Si ves al encargado, yo estaba despierto.","Treinta años en esta garita. La tele sigue echando lo mismo."];
+  out.push(q.mode==="out"||q.mode==="outn"?{who:"gata",exp:"awake",text:"Miau. (Mancha te mira desde la caja. Parece que aprueba.)"}:P("normal",FL[new Date().getDate()%FL.length]));
+  return out;
+}
+var nightFace=["",""];
+function nightSay(l){
+  if($("n-port")&&!$("n-port").dataset.who) nightFace=["",""];
+  const pc=$("n-port"), who=$("n-who"), el=$("g-text"); if(!pc||!el||!l) return;
+  if(nightFace[0]!==l.who||nightFace[1]!==l.exp){MTNight.face(pc.getContext("2d"),l.who,l.exp);nightFace=[l.who,l.exp]}
+  pc.dataset.who=l.who; who.textContent=l.who==="paco"?"Paco, el vigilante":"Mancha, la gata";
+  if(l.text===lastLine||reduce){el.textContent=l.text;lastLine=l.text;return}
+  lastLine=l.text; clearInterval(typer); let i=0; el.textContent="";
+  const f=l.who==="paco"?190:520;
+  typer=setInterval(()=>{i++;el.textContent=l.text.slice(0,i);if(i%2===0&&l.text[i-1]!==" ")MTNight.sfx.blip(f);if(i>=l.text.length)clearInterval(typer)},30);
+}
 function typeLine(el, text){
   if(!el) return;
   if(text===lastLine||reduce){el.textContent=text;lastLine=text;return}
@@ -1479,34 +1542,28 @@ function renderQuick(){
   const q=quickState(), I=quickInfo(q), d=new Date(), now=nowHM(), on=!!cfg.rpg;
   const dateTxt=`${DOWL[d.getDay()]} ${d.getDate()} de ${MON[d.getMonth()]}`;
   if(on){
-    const R=rpg(), b=R.boss, sound=cfg.rpgSound!==false;
-    let line;
-    const bn=b&&b.max?b.name:"La ciudad";
-    if(q.mode==="tipo") line=`Estás de ${TIPOS[q.r.tipo].toLowerCase()}. ${bn} espera tu vuelta. Recupérate.`;
-    else if(q.mode==="in") line=q.p.rest?`Día libre. ${bn} duerme. Descansar también da experiencia.`:q.p.fest?`Festivo en la ciudad. Si trabajas, cuenta como horas festivas.`:`${bn} vigila la entrada. ${I.state}.`;
-    else if(q.mode==="out"||q.mode==="outn") line=`¡En combate! Llevas ${fmt(I.live)}. ${q.mode==="out"&&!q.p.rest&&!q.p.fest?`Aguanta hasta las ${q.p.s}.`:"Ficha la salida al terminar."}`;
-    else line=`Turno superado: ${fmt(q.c.worked)}${q.c.extra?` (+${fmt(q.c.extra)} extra)`:""}. ${b&&b.max?`${bn} se lame las heridas: le quedan ${b.hp}.`:""}`;
-    line+=` Evento: ${R.event.name}.`;
-    const main = I.btn?`<button class="gcmd main" id="q-punch"><span>▶ ${I.btn==="Entrada"?"Atacar · fichar entrada":"Rematar · fichar salida"}</span><b class="num">${now}</b></button>`
-      : `<button class="gcmd main done" id="q-edit"><span>${q.mode==="done"?"✓ Turno superado":"✎ "+TIPOS[q.r.tipo]}</span><b>Editar</b></button>`;
+    const R=rpg(), sound=cfg.rpgSound!==false;
+    nightState=nightOf(q,R);
+    $("n-hud").innerHTML=`
+      <div><div class="n-time num">${now}</div><div class="n-shift">${q.mode==="tipo"?TIPOS[q.r.tipo]:q.p.rest?"Hoy libras":q.p.fest?"Festivo":`Turno de ${q.p.name.toLowerCase()}, de ${q.p.e} a ${q.p.s}`}</div></div>
+      <div class="n-lv"><div>Nivel <b>${R.L}</b></div>${segBar(R.xp-R.from,R.to-R.from,"xp",10)}<span class="num">${coinIco}${R.coins}</span></div>`;
+    const main = I.btn?`<button class="n-go" id="q-punch">Fichar ${I.btn==="Entrada"?"entrada":"salida"}<b class="num">${now}</b></button>`
+      : `<button class="n-go done" id="q-edit">${q.mode==="done"?"Turno hecho":TIPOS[q.r.tipo]}<b>Editar</b></button>`;
     $("g-ui").innerHTML=`
-      <div class="g-top">
-        <div class="g-port"><canvas class="ava" width="48" height="48" aria-hidden="true"></canvas></div>
-        <div class="g-stats"><div class="g-name"><b>NV ${R.L}</b> ${R.rank.name}</div>${segBar(R.xp-R.from,R.to-R.from,"xp",14)}<div class="g-coins num">${coinIco}${R.coins}</div></div>
-        <div class="g-btns"><button class="gbtn" id="g-snd" aria-pressed="${sound}" aria-label="Sonido">${sound?"♪":"✕"}</button><button class="gbtn" id="g-mode" aria-label="Pasar a modo normal">◐</button></div>
+      <div class="n-dlg" id="n-dlg" role="button" tabindex="0" aria-label="Siguiente frase">
+        <canvas id="n-port" width="16" height="16" aria-hidden="true"></canvas>
+        <p><small id="n-who"></small><span id="g-text" aria-live="polite"></span></p><i class="n-more" aria-hidden="true">▼</i>
       </div>
-      ${b&&b.max?`<div class="g-boss"><span>${b.name}</span>${segBar(b.hp,b.max,"hp",12)}<em class="num">${b.hp}/${b.max}</em></div>`:""}
-      <div class="g-clock num">${now}<small>${dateTxt}</small></div>
-      <div class="g-dialog">
-        <p class="g-text" id="g-text" aria-live="polite"></p>
-        ${main}
-        <div class="g-row"><button class="gcmd" id="q-plus">Objetos</button><button class="gcmd" id="q-hero">Héroe</button><button class="gcmd" id="q-app">Salir ›</button></div>
-      </div>`;
-    typeLine($("g-text"),line);
-    $("g-snd").onclick=()=>{cfg.rpgSound=!(cfg.rpgSound!==false);persistCfg();MTScene.setSound(cfg.rpgSound);if(cfg.rpgSound)MTScene.sfx.coin();renderQuick()};
+      <div class="n-acts">${main}<button class="n-bag" id="q-plus">Mochila</button></div>
+      <div class="n-links"><button id="q-hero">Héroe</button><button id="g-snd" aria-pressed="${sound}">Sonido: ${sound?"sí":"no"}</button><button id="g-mode">Modo normal</button><button id="q-app">Ir a la app</button></div>`;
+    nightLines=pacoLines(q,I,R); if(nightIdx>=nightLines.length) nightIdx=0;
+    nightSay(nightLines[nightIdx]);
+    $("n-dlg").onclick=$("n-dlg").onkeydown=e=>{if(e.type==="keydown"&&e.key!=="Enter"&&e.key!==" ")return;if(e.preventDefault&&e.type==="keydown")e.preventDefault();
+      if(typer&&$("g-text").textContent!==lastLine){clearInterval(typer);$("g-text").textContent=lastLine;return}
+      nightIdx=(nightIdx+1)%nightLines.length;nightSay(nightLines[nightIdx])};
+    $("g-snd").onclick=()=>{cfg.rpgSound=!(cfg.rpgSound!==false);persistCfg();MTScene.setSound(cfg.rpgSound);MTNight.setSound(cfg.rpgSound);if(cfg.rpgSound)MTNight.sfx.coin();renderQuick()};
     $("g-mode").onclick=()=>setRPG(false);
     $("q-hero").onclick=()=>{tab="rpg";closeQuick();window.scrollTo(0,0)};
-    paintAvatars();
   } else {
     const R2=46, C=2*Math.PI*R2;
     $("quick").querySelector(".q-in").innerHTML=`
@@ -1533,11 +1590,11 @@ function openQuick(){
   closeSheet(); document.body.classList.add("q-open"); lastLine="";
   const on=!!cfg.rpg;
   $("quick").className=on?"game":"";
-  $("quick").innerHTML=on?`<canvas class="scene" data-mode="full" id="q-scene" role="img" aria-label="Tu personaje frente al jefe del periodo"></canvas><div class="g-ui" id="g-ui"></div>`:`<div class="q-in"></div>`;
-  $("quick").hidden=false; renderQuick(); if(on) mountScenes();
+  $("quick").innerHTML=on?`<div class="n-stage"><canvas class="nscene" id="q-scene" role="img" aria-label="La puerta de tu trabajo: tu personaje, el reloj de fichar, Paco en su garita y Mancha la gata"></canvas><div class="n-hud" id="n-hud"></div></div><div class="n-panel" id="g-ui"></div>`:`<div class="q-in"></div>`;
+  $("quick").hidden=false; nightIdx=0; renderQuick(); if(on) mountNight();
   clearInterval(quickTimer); quickTimer=setInterval(()=>{if(!$("quick").hidden && $("sheet").hidden)renderQuick()},15000);
 }
-function closeQuick(){$("quick").hidden=true;$("quick").innerHTML="";document.body.classList.remove("q-open");clearInterval(quickTimer);clearInterval(typer);render()}
+function closeQuick(){if(nightScene){nightScene.destroy();nightScene=null}$("quick").hidden=true;$("quick").innerHTML="";document.body.classList.remove("q-open");clearInterval(quickTimer);clearInterval(typer);render()}
 
 function quickClock(){
   let q; try{q=new URLSearchParams(location.search)}catch(e){return}

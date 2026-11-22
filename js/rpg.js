@@ -23,13 +23,13 @@ function bossOf(endDate){return BOSSES[(endDate.getFullYear()*12+endDate.getMont
 
 /* Evento del día: sale de la fecha (siempre el mismo para el mismo día) y cambia algo pequeño. */
 const EVENTS=[
-  {id:"cafe",  name:"Máquina de café arreglada", desc:"Hoy entrar a tu hora da el doble de experiencia.", puntual:2},
-  {id:"lluvia",name:"Lluvia ácida sobre el sector", desc:"Fichar el día completo da +5 XP extra.", dia:5},
-  {id:"merca", name:"Mercado negro abierto", desc:"La tienda hace un 20 % de descuento hoy.", shop:.8},
-  {id:"luna",  name:"Luna de neón", desc:"Las rachas dan el doble de bonificación.", racha:2},
-  {id:"cred",  name:"Lluvia de créditos", desc:"Fichar hoy da el doble de monedas.", coins:2},
-  {id:"jefe",  name:"El jefe tiene un mal día", desc:"Completar el turno da el triple de experiencia.", completo:3},
-  {id:"calma", name:"Día tranquilo en la ciudad", desc:"Nada raro en el sector. Buen día para cuidar la racha."}];
+  {id:"cafe",  name:"Han arreglado la máquina de café", desc:"Hoy entrar a tu hora da el doble de experiencia.", puntual:2},
+  {id:"lluvia",name:"Día de lluvia", desc:"Fichar el día completo da +5 XP extra.", dia:5},
+  {id:"merca", name:"Rebajas en el mercadillo", desc:"La tienda hace un 20 % de descuento hoy.", shop:.8},
+  {id:"luna",  name:"Luna llena", desc:"Las rachas dan el doble de bonificación.", racha:2},
+  {id:"cred",  name:"Día de paga", desc:"Fichar hoy da el doble de monedas.", coins:2},
+  {id:"jefe",  name:"El encargado viene de mal humor", desc:"Completar el turno da el triple de experiencia.", completo:3},
+  {id:"calma", name:"Día tranquilo", desc:"Nada raro por aquí. Buen día para cuidar la racha."}];
 const REST_EVENT={id:"libre",name:"Día libre",desc:"Hoy toca recargar energía. Descansar también da experiencia."};
 function eventOf(s){let h=7;for(const ch of s)h=(h*31+ch.charCodeAt(0))>>>0;return EVENTS[h%EVENTS.length]}
 
