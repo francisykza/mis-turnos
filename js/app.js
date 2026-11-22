@@ -1480,10 +1480,11 @@ function doPunch(q){
   if(navigator.vibrate) try{navigator.vibrate(18)}catch(e){}
 }
 // Menú «Apuntar» / «Objetos»: todo lo que no es fichar
-function openActions(){
+function openActions(ttl){
   const q=quickState(), fest=isFest(q.t), game=!!cfg.rpg;
+  if(typeof ttl!=="string") ttl="";
   const tile=(id,ico,label,dis)=>`<button class="atile" data-a="${id}" ${dis?"disabled":""}><i aria-hidden="true">${ico}</i><span>${label}</span></button>`;
-  openSheet(`<div class="grab"></div><h3 id="sh-title">${game?"Mochila":"Apuntar"}</h3>
+  openSheet(`<div class="grab"></div><h3 id="sh-title">${ttl||(game?"Mochila":"Apuntar")}</h3>
     <div class="atiles">
       ${tile("x30","＋","30 min extra",q.mode==="tipo")}${tile("x60","＋","1 h extra",q.mode==="tipo")}${tile("xo","⏱","Otra extra",q.mode==="tipo")}
       ${tile("full","✓","Turno completo",!(q.mode==="in"&&!q.p.rest&&!q.p.fest))}${tile("fest","★",fest?"Quitar festivo":"Es festivo")}${tile("edit","✎","Editar el día")}
@@ -1525,6 +1526,37 @@ function mountNight(){
   MTNight.setSound(cfg.rpgSound!==false);
   nightScene=MTNight.mount(cv,()=>nightState);
   nightScene.onEvent=id=>{const l=NIGHT_EVENTS[id];if(l)nightSay(l)};
+  nightScene.onView=v=>nightHot(v);
+  nightHot(nightScene.geom().view);
+}
+// Dentro, los objetos de la escena son botones (libreta, reloj, tablón…)
+function nightHot(v){
+  const cv=$("q-scene"); if(!cv||!nightScene) return;
+  const st=cv.parentElement; st.querySelectorAll(".n-hot").forEach(b=>b.remove());
+  if(v!=="in") return;
+  const G=nightScene.geom();
+  MTNight.HOT.forEach(h=>{
+    const top=(h.y+G.oy)/G.H*100; if(top<0) return;
+    const b=document.createElement("button"); b.className="n-hot "+h.pos; b.type="button";
+    b.style.cssText=`left:${h.x}%;top:${top}%;width:${h.w}%;height:${h.h/G.H*100}%`;
+    b.setAttribute("aria-label",h.label); b.innerHTML=`<span>${h.tag}</span>`;
+    b.onclick=()=>hotAct(h.id); st.insertBefore(b,$("n-hud"));
+  });
+  showHotLabels();
+}
+function showHotLabels(){const cv=$("q-scene");if(!cv)return;const st=cv.parentElement;st.classList.add("labels");clearTimeout(showHotLabels.t);showHotLabels.t=setTimeout(()=>st.classList.remove("labels"),4500)}
+function hotAct(id){
+  const q=quickState(), R=rpg(), Y=(text,exp)=>nightSay({who:"yo",exp:exp||"normal",text});
+  MTNight.sfx.blip(440);
+  if(id==="libreta") openActions("Libreta");
+  else if(id==="reloj"){ if(q.mode==="out"||q.mode==="outn") doPunch(q); else Y("El reloj dice que hoy ya está. A casa.") }
+  else if(id==="calendario"){tab="mes";closeQuick();window.scrollTo(0,0)}
+  else if(id==="sobre"){tab="nomina";closeQuick();window.scrollTo(0,0)}
+  else if(id==="taquilla"){tab="rpg";heroTab="tienda";closeQuick();window.scrollTo(0,0)}
+  else if(id==="tablon") Y(`En el tablón pone: «${R.event.name}». ${R.event.desc}`);
+  else if(id==="taza") Y(["Café de máquina. Sabe a lunes, pero calienta.","Tercer café. Nadie lleva la cuenta.","Se ha quedado frío. Como siempre."][new Date().getMinutes()%3]);
+  else if(id==="ventana") Y(nightState&&nightState.rain?"Sigue lloviendo. Desde aquí dentro hasta parece bonito.":new Date().getHours()>=21||new Date().getHours()<6?"La ciudad duerme. Yo no.":"Ahí fuera la gente hace cosas de gente libre.");
+  else if(id==="gata") nightSay({who:"gata",exp:"sleepy",text:"Mmmrrr… (Mancha duerme encima de la taquilla. Nadie sabe cómo sube.)"});
 }
 var NIGHT_EVENTS={
   reparto:{who:"paco",exp:"normal",text:"El de las cenas. Reparte comida a gente que duerme. Qué envidia, oye."},
@@ -1549,23 +1581,25 @@ function pacoLines(q,I,R){
         :P("normal","Tu turno de hoy ya pasó. Si viniste, apúntalo en la mochila."))}
   }else if(q.mode==="out"||q.mode==="outn"){
     if(I.live<3) out.push(P("happy",`Fichado a las ${r.e}. ${!p.rest&&!p.fest&&toMin(r.e)<=toMin(p.e)+5?"Puntual, como el último tren.":"Más vale tarde que nunca."}`));
-    out.push(P(night?"sleepy":"normal",`Llevas ${fmt(I.live)} dentro. ${q.mode==="out"&&!p.rest&&!p.fest?`Sales a las ${p.s}.`:"Ficha la salida al terminar."}`));
+    out.push({who:"yo",exp:night?"sleepy":"normal",text:`Llevo ${fmt(I.live)} aquí. ${q.mode==="out"&&!p.rest&&!p.fest?`Salgo a las ${p.s}.`:"Ficho la salida al terminar."}`});
+    out.push({who:"yo",exp:"normal",text:"Si echo horas extra, lo apunto en la libreta. Para irme, el reloj de la pared."});
   }else out.push(P("happy",`Hoy ${fmt(q.c.worked)}${q.c.extra?`, con ${fmt(q.c.extra)} de extra`:""}. Hasta mañana, chaval.`));
-  out.push(P("normal",`En el tablón pone: «${R.event.name}». ${R.event.desc}`));
+  const inside=q.mode==="out"||q.mode==="outn";
+  out.push(inside?{who:"yo",exp:"normal",text:`En el tablón pone: «${R.event.name}». ${R.event.desc}`}:P("normal",`En el tablón pone: «${R.event.name}». ${R.event.desc}`));
   out.push(P("normal",`Vas por el nivel ${R.L}, ${R.rank.name.toLowerCase()}. ${R.streak>1?`Llevas ${R.streak} días seguidos fichando.`:"Cada día fichado suma."}`));
   const FL=["Dicen que esta noche refresca. Lo dicen todas las noches.","La máquina de café se ha vuelto a tragar una moneda. Ya van tres esta semana.","Mancha duerme en esa caja desde hace años. Más fija que yo en la plantilla.","Si ves al encargado, yo estaba despierto.","Treinta años en esta garita. La tele sigue echando lo mismo."];
-  out.push(q.mode==="out"||q.mode==="outn"?{who:"gata",exp:"awake",text:"Miau. (Mancha te mira desde la caja. Parece que aprueba.)"}:P("normal",FL[new Date().getDate()%FL.length]));
+  out.push(q.mode==="out"||q.mode==="outn"?{who:"gata",exp:"sleepy",text:"Mmmrrr… (Mancha duerme encima de la taquilla. Nadie sabe cómo sube.)"}:P("normal",FL[new Date().getDate()%FL.length]));
   return out;
 }
 var nightFace=["",""];
 function nightSay(l){
   if($("n-port")&&!$("n-port").dataset.who) nightFace=["",""];
   const pc=$("n-port"), who=$("n-who"), el=$("g-text"); if(!pc||!el||!l) return;
-  if(nightFace[0]!==l.who||nightFace[1]!==l.exp){MTNight.face(pc.getContext("2d"),l.who,l.exp);nightFace=[l.who,l.exp]}
-  pc.dataset.who=l.who; who.textContent=l.who==="paco"?"Paco, el vigilante":"Mancha, la gata";
+  if(nightFace[0]!==l.who||nightFace[1]!==l.exp){MTNight.face(pc.getContext("2d"),l.who,l.exp,nightState&&nightState.look);nightFace=[l.who,l.exp]}
+  pc.dataset.who=l.who; who.textContent=l.who==="paco"?"Paco, el vigilante":l.who==="yo"?"Tú":"Mancha, la gata";
   if(l.text===lastLine||reduce){el.textContent=l.text;lastLine=l.text;return}
   lastLine=l.text; clearInterval(typer); let i=0; el.textContent="";
-  const f=l.who==="paco"?190:520;
+  const f=l.who==="paco"?190:l.who==="yo"?330:520;
   typer=setInterval(()=>{i++;el.textContent=l.text.slice(0,i);if(i%2===0&&l.text[i-1]!==" ")MTNight.sfx.blip(f);if(i>=l.text.length)clearInterval(typer)},30);
 }
 function typeLine(el, text){
@@ -1590,8 +1624,8 @@ function renderQuick(){
         <canvas id="n-port" width="16" height="16" aria-hidden="true"></canvas>
         <p><small id="n-who"></small><span id="g-text" aria-live="polite"></span></p><i class="n-more" aria-hidden="true">▼</i>
       </div>
-      <div class="n-acts">${main}<button class="n-bag" id="q-plus">Mochila</button></div>
-      <div class="n-links"><button id="q-hero">Héroe</button><button id="g-snd" aria-pressed="${sound}">Sonido: ${sound?"sí":"no"}</button><button id="g-mode">Modo normal</button><button id="q-app">Ir a la app</button></div>`;
+      <div class="n-acts${nightState.mode==="work"?" solo":""}">${main}${nightState.mode==="work"?"":'<button class="n-bag" id="q-plus">Mochila</button>'}</div>
+      <div class="n-links">${nightState.mode==="work"?'<button id="q-look">Qué puedo tocar</button>':""}<button id="q-hero">Héroe</button><button id="g-snd" aria-pressed="${sound}">Sonido: ${sound?"sí":"no"}</button><button id="g-mode">Modo normal</button><button id="q-app">Ir a la app</button></div>`;
     nightLines=pacoLines(q,I,R); if(nightIdx>=nightLines.length) nightIdx=0;
     nightSay(nightLines[nightIdx]);
     $("n-dlg").onclick=$("n-dlg").onkeydown=e=>{if(e.type==="keydown"&&e.key!=="Enter"&&e.key!==" ")return;if(e.preventDefault&&e.type==="keydown")e.preventDefault();
@@ -1599,6 +1633,7 @@ function renderQuick(){
       nightIdx=(nightIdx+1)%nightLines.length;nightSay(nightLines[nightIdx])};
     $("g-snd").onclick=()=>{cfg.rpgSound=!(cfg.rpgSound!==false);persistCfg();MTScene.setSound(cfg.rpgSound);MTNight.setSound(cfg.rpgSound);if(cfg.rpgSound)MTNight.sfx.coin();renderQuick()};
     $("g-mode").onclick=()=>setRPG(false);
+    if($("q-look")) $("q-look").onclick=showHotLabels;
     $("q-hero").onclick=()=>{tab="rpg";closeQuick();window.scrollTo(0,0)};
   } else {
     const R2=46, C=2*Math.PI*R2;
@@ -1617,7 +1652,7 @@ function renderQuick(){
     $("q-rpg").onclick=()=>setRPG(true);
   }
   $("q-app").onclick=closeQuick;
-  $("q-plus").onclick=openActions;
+  const qp=$("q-plus"); if(qp) qp.onclick=()=>openActions();
   const pb=$("q-punch"); if(pb) pb.onclick=()=>{pb.classList.add("hit");doPunch(q)};
   const qe=$("q-edit"); if(qe) qe.onclick=()=>openEditor(q.s);
 }

@@ -889,3 +889,17 @@ body.q-open:has(#quick.game) .atile i{color:var(--n-amber)}
 .n-time,.n-go b,[data-skin="jornada"] :is(.hero .big,.nres .n,.vnum,.f-lv b,.shop-head b,.n-lv b){font-family:var(--pixnum);font-weight:400;letter-spacing:-.02em}
 [data-skin="jornada"] .hero .big{font-size:clamp(30px,10vw,44px)}
 .n-time{font-size:30px}
+
+/* v6 · dentro: los objetos de la escena se pueden tocar */
+.n-hot{position:absolute;z-index:2;border:0;background:transparent;padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.n-hot::after{content:"";position:absolute;right:-3px;top:-3px;width:6px;height:6px;background:#ffb347;box-shadow:0 0 0 2px #05060f;animation:blink 1.4s steps(1) infinite}
+.n-hot span{position:absolute;left:50%;bottom:calc(100% + 4px);transform:translateX(-50%);white-space:nowrap;font:400 12px/1 var(--pixel);color:#efe8d6;background:#05060f;border:2px solid #e9e3cf;padding:3px 5px;opacity:0;pointer-events:none;transition:opacity .2s}
+.n-stage.labels .n-hot span,.n-hot:focus-visible span{opacity:1}
+.n-hot:focus-visible{outline:2px solid #ffb347;outline-offset:1px}
+.n-hot:active{background:rgba(255,179,71,.18)}
+.n-hot.b span{bottom:auto;top:calc(100% + 4px)}
+.n-hot.c span{bottom:auto;top:50%;transform:translate(-50%,-50%)}
+.n-hot.r span{left:auto;right:0;transform:none}
+.n-hot.c.r span{transform:translateY(-50%)}
+.n-acts.solo{grid-template-columns:1fr}
+@media (prefers-reduced-motion:reduce){.n-hot::after{animation:none}}

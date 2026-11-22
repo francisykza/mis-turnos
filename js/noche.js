@@ -4,6 +4,8 @@
    puede llover. Fichar es una escena: tu personaje camina al reloj, mete la tarjeta,
    suena el «clac», se sube la persiana y entra; al salir, ficha y se va calle abajo.
    Cada cierto tiempo pasa algo (repartidor, apagón, estrella fugaz, Mancha trae algo).
+   Dentro, la cámara pasa al interior: tu personaje escribe en su mesa y los objetos
+   (libreta, reloj, tablón, calendario, taquilla, sobre…) se pueden tocar (HOT).
 
    MTNight.mount(canvas, get) · get() devuelve {mode, rain, ficha, look}
      mode: "in" (te espera fuera) · "work" (estás dentro) · "done" (ya te fuiste) · "off" (no toca)
@@ -52,8 +54,16 @@ function heroPal(L){
 }
 
 /* ---------- retratos 16×16 para el cuadro de diálogo ---------- */
-function face(c2,who,exp){
+function face(c2,who,exp,L){
   c2.clearRect(0,0,16,16);
+  if(who==="yo"){
+    const pal=heroPal(L);BODY.slice(0,16).forEach((row,y)=>[...row].forEach((ch,x)=>{if(pal[ch]){c2.fillStyle=pal[ch];c2.fillRect(x,y+1,1,1)}}));
+    c2.fillStyle="#141522";
+    if(L&&L.visor){c2.fillStyle=L.visor;c2.fillRect(4,8,8,2)}
+    else if(exp==="sleepy"){c2.fillRect(5,9,2,1);c2.fillRect(9,9,2,1)}else{c2.fillRect(6,8,1,2);c2.fillRect(9,8,1,2)}
+    c2.fillStyle="#e58c7a";c2.fillRect(5,10,1,1);c2.fillRect(10,10,1,1);c2.fillStyle="#a0614a";c2.fillRect(7,11,2,1);
+    return;
+  }
   const put=(m,pal)=>m.forEach((row,y)=>[...row].forEach((ch,x)=>{if(pal[ch]){c2.fillStyle=pal[ch];c2.fillRect(x,y,1,1)}}));
   if(who==="paco"){
     const m=["....kkkkkkkk....","...kkkkBkkkkk...","..kkkkkkkkkkkk..","..KKKKKKKKKKKK..","..gssssssssssg..","..gsSSssssSSsg..","..ssssssssssss..","..ssssssssssss..","..sssssSSsssss..","..ssmmmmmmmmss..","..ssmmssssmmss..","...ssssssssss...","....ssssssss....","..ccccsssscccc..",".cccccccccccccc.","cccccccBcccccccc"].map(r=>[...r]);
@@ -69,6 +79,16 @@ function face(c2,who,exp){
   }
 }
 
+const HOT=[
+  {id:"reloj",tag:"Reloj",pos:"",label:"Reloj: fichar la salida",x:43,y:11,w:14,h:14},
+  {id:"tablon",tag:"Tablón",pos:"",label:"Tablón",x:61,y:13,w:26,h:24},
+  {id:"calendario",tag:"Calendario",pos:"b",label:"Calendario: el periodo",x:41,y:29,w:18,h:18},
+  {id:"ventana",tag:"Ventana",pos:"",label:"Ventana",x:4,y:16,w:32,h:32},
+  {id:"gata",tag:"Mancha",pos:"r",label:"Mancha",x:86,y:28,w:14,h:11},
+  {id:"taquilla",tag:"Taquilla",pos:"c r",label:"Taquilla: tu equipo",x:86,y:40,w:14,h:64},
+  {id:"taza",tag:"Café",pos:"b",label:"Café",x:27,y:77,w:9,h:11},
+  {id:"libreta",tag:"Libreta",pos:"",label:"Libreta: apuntar horas",x:38,y:79,w:16,h:10},
+  {id:"sobre",tag:"Sobre",pos:"b",label:"Sobre: la nómina",x:55,y:80,w:10,h:9}];
 const DIG={0:"111101101101111",1:"010110010010111",2:"111001111100111",3:"111001111001111",4:"101101111001001",5:"111100111001111",6:"111100111101111",7:"111001010010010",8:"111101111101111",9:"111101111001111"};
 
 function mount(cv, get){
@@ -125,12 +145,15 @@ function mount(cv, get){
   let mode=null, seq=null, hero={x:68,vis:true,smile:0}, shutter=0, doorLamp=0, inside=false, flash=0, shake=0, card=null, cardDone=0;
   let cat={x:5,mode:"sleep"}, blackout=0, bike=null, star=null, gift=null, look=0, lookT=0, pacoMood="normal", pacoT=0, banner=null;
   let nextEv=900+Math.random()*900, onEvent=null, ficha="0000", heroLook=null;
+  let view="out", onView=null, fade=0, mug=[];
+  function setView(v){if(view!==v){view=v;if(onView)onView(v)}}
 
   // Coloca la escena tal cual, sin animación (al abrir o al deshacer)
   function place(m){
     seq=null; card=null; inside=m==="work"; hero.vis=m==="in"; hero.x=68;
     shutter=m==="work"?6:0; doorLamp=m==="work"?1:0;
-    cat.mode=m==="work"?"sit":"sleep"; cat.x=5;
+    cat.mode=m==="work"?"sit":"sleep"; cat.x=5; fade=0;
+    setView(m==="work"?"in":"out");
     released();
   }
   function released(){pending.forEach(f=>floats.push(f));pending=[]}
@@ -151,7 +174,11 @@ function mount(cv, get){
       else if(s.st==="wait"){if(--s.w<=0){s.st="open";SFX.shutter()}}
       else if(s.st==="open"){shutter=Math.min(40,shutter+1);if(shutter>=40)s.st="enter"}
       else if(s.st==="enter"){hero.x-=.5;if(hero.x<=25){inside=true;hero.vis=false;s.st="close";SFX.shutter()}}
-      else if(s.st==="close"){shutter=Math.max(6,shutter-1);if(shutter<=6){cat.mode="sit";seq=null;released();if(onEvent)onEvent("dentro")}}
+      else if(s.st==="close"){shutter=Math.max(6,shutter-1);if(shutter<=6){seq={k:"fade",f:0,to:"in"}}}
+    }else if(s.k==="fade"){
+      s.f++; fade=s.f<=16?s.f/16:Math.max(0,(32-s.f)/16);
+      if(s.f===16){setView(s.to);if(s.to==="out"){inside=true;hero.vis=false;shutter=6;doorLamp=1}}
+      if(s.f>=32){fade=0;if(s.next){seq=s.next;SFX.shutter()}else{seq=null;cat.mode="sit";released();if(onEvent)onEvent("dentro")}}
     }else if(s.k==="out"){
       if(s.st==="open"){shutter=Math.min(40,shutter+1);if(shutter>=40){inside=false;hero.vis=true;hero.x=25;s.st="walk"}}
       else if(s.st==="walk"){hero.x+=.5;if(t%10===0)SFX.step();if(hero.x>=52){s.st="card";card={x0:hero.x+15,y0:101,k:0}}}
@@ -175,9 +202,82 @@ function mount(cv, get){
   };
   function event(id){if(seq)return false;const r=EV[id]&&EV[id]();if(r===false)return false;if(onEvent)onEvent(id);return true}
   function randomEvent(){
+    if(view==="in"){if(Math.random()<.35)event("apagon");return}
     const ids=pname==="noche"?["reparto","apagon","regalo","estrella","reparto","regalo"]:["regalo","reparto"];
     event(ids[Math.random()*ids.length|0]);
   }
+
+  /* ---- interior: tu mesa ---- */
+  function drawInterior(lightsOn){
+    const day=pname==="dia"||pname==="gris", wall=day?"#4a3a46":"#33283a", wall2=day?"#3d303c":"#2a2130";
+    R(0,0,W,104,wall);for(let yy=4;yy<74;yy+=6)R(0,yy,W,1,"rgba(0,0,0,.08)");
+    R(0,74,W,30,wall2);R(0,74,W,1,"#4f3f4c");for(let xx=3;xx<W;xx+=8)R(xx,75,1,29,"rgba(0,0,0,.12)");
+    // ventana a la calle
+    R(4,16,32,30,"#1a1420");R(6,18,28,13,P.sky[1]);R(6,31,28,13,P.sky[2]);
+    if(P.moon)R(28,21,3,3,"#e9e4c8");
+    R(6,34,6,10,P.far);R(13,29,8,15,P.far);R(22,36,12,8,P.far);
+    [[8,36],[10,40],[15,32],[18,36],[16,40],[25,38],[30,40]].forEach(([a,b],i)=>{if(P.wp>0&&lightsOn&&((t>>6)+i)%5)R(a,b,1,1,P.fw)});
+    if(rain)for(let i=0;i<9;i++){const rx=6+(i*29)%28,ry=18+((t*(1+i%3)*.5+i*13)%25);R(rx,ry,1,2,"rgba(170,185,240,.45)")}
+    R(19,18,1,26,"#1a1420");R(6,30,28,1,"#1a1420");R(3,46,34,2,"#4a3a44");
+    // reloj de pared con la hora real
+    x.fillStyle="#2a2230";x.beginPath();x.arc(50,18,6.5,0,7);x.fill();x.fillStyle="#e9e3cf";x.beginPath();x.arc(50,18,5.5,0,7);x.fill();
+    const d=new Date(), am=(d.getMinutes()/60)*Math.PI*2-Math.PI/2, ah=((d.getHours()%12+d.getMinutes()/60)/12)*Math.PI*2-Math.PI/2;
+    for(let k=0;k<5;k++)R(50+Math.cos(am)*k,18+Math.sin(am)*k,1,1,"#2a2230");
+    for(let k=0;k<3.5;k++)R(50+Math.cos(ah)*k,18+Math.sin(ah)*k,1,1,"#c0504d");
+    // calendario
+    R(42,30,16,16,"#f2ead6");R(42,30,16,4,"#c0504d");R(45,31,10,1,"#f2ead6");
+    for(let r=0;r<3;r++)for(let c=0;c<4;c++)R(44+c*3.5,36+r*3,2,2,"#b8ab90");
+    const di=d.getDate()%12;R(44+(di%4)*3.5,36+(di/4|0)*3,2,2,"#c0504d");
+    // tablón de anuncios
+    R(61,13,26,24,"#4a3424");R(62,14,24,22,"#8a6440");
+    R(64,16,7,8,"#f2ead6");R(73,17,8,6,t%240<12?"#fff3c4":"#ffe28a");R(66,26,9,7,"#cfe3f0");R(77,25,7,9,"#f2ead6");
+    [[67,16],[76,17],[70,26],[80,25]].forEach(([a,b])=>R(a,b,1,1,"#e5484d"));
+    R(65,18,5,1,"#b8ab90");R(65,20,4,1,"#b8ab90");R(74,19,6,1,"#c9a64a");R(67,28,7,1,"#9fb8cc");R(78,28,5,1,"#b8ab90");
+    // taquilla
+    R(86,39,14,1,"#6b7b94");R(86,40,14,64,"#4a5a72");R(93,40,1,64,"#3a475c");
+    for(let i=0;i<4;i++){R(88,45+i*2,4,1,"#2e394a");R(95,45+i*2,4,1,"#2e394a")}
+    R(91,70,1,3,"#c9d1e0");R(95,70,1,3,"#c9d1e0");
+    // estantería del almacén
+    R(2,56,20,48,"#4a3428");R(3,57,18,46,"#2a1f22");[70,86,102].forEach(yy=>R(2,yy,20,2,"#5c4232"));
+    R(4,62,8,8,"#a87a4a");R(13,64,7,6,"#8a6440");R(4,78,10,8,"#b98a52");R(15,80,6,6,"#a87a4a");R(5,94,7,8,"#8a6440");R(13,96,8,6,"#b98a52");
+    R(6,65,3,1,"#f2ead6");R(6,81,4,1,"#f2ead6");R(15,98,3,1,"#f2ead6");
+    // suelo
+    R(0,104,W,BASE-104,"#241c26");for(let yy=110;yy<BASE;yy+=7)R(0,yy,W,1,"#1c1620");
+    // Mancha duerme encima de la taquilla
+    const catC=heroLook&&heroLook.cat?heroLook.cat:"#1f1d2b";spr(CAT_SLEEP,{c:catC,w:"#4a4a5c"},87,31);
+    // silla y tú, escribiendo
+    R(41,66,22,22,"#2a1d26");R(42,67,20,1,"#3a2a34");
+    const pal=heroPal(heroLook), bob=t%90<45?0:1, hx=44, hy=64+bob, up=(t%520)>440;
+    spr(BODY.slice(0,22),pal,hx,hy);
+    if(heroLook&&heroLook.visor){R(hx+4,hy+7,8,2,heroLook.visor)}
+    else if(up){R(hx+5,hy+7,1,2,"#141522");R(hx+8,hy+7,1,2,"#141522")}
+    else{R(hx+6,hy+8,1,1,"#141522");R(hx+9,hy+8,1,1,"#141522")}
+    R(hx+5,hy+9,1,1,"#e58c7a");R(hx+10,hy+9,1,1,"#e58c7a");R(hx+7,hy+10,2,1,"#a0614a");
+    // mesa
+    R(24,86,58,3,"#7a5634");R(24,89,58,1,"#553a24");R(26,90,54,15,"#5c3f28");R(60,94,16,6,"#4a3220");R(66,96,4,1,"#c9a86a");R(26,104,54,2,"rgba(0,0,0,.3)");
+    // libreta y la mano que escribe
+    R(40,84,12,3,"#f2ead6");R(46,84,1,3,"#d8cdb4");
+    const ph=(t/4|0)%16, px2=42+(ph<8?ph:16-ph);
+    for(let k=41;k<Math.min(51,px2+1);k++)if(k!==46)R(k,85,1,1,"#6b6f8a");
+    if(up){R(42,84,2,2,pal.s)}else{R(px2,83,2,2,pal.s);R(px2+1,80,1,3,"#e8c25a");R(px2+1,83,1,1,"#2a2230")}
+    R(55,85,2,1,pal.s);
+    // sobre de la nómina
+    R(56,84,8,4,"#e9dcb8");R(56,84,8,1,"#b9a57a");R(59,85,2,2,"#c0504d");
+    // taza de café con vapor
+    R(30,82,4,5,"#c0504d");R(34,83,1,2,"#c0504d");R(30,82,4,1,"#3a2010");
+    if(t%9===0)mug.push({x:31+Math.random()*2,y:80,a:.45});
+    mug.forEach(p=>{p.y-=.18;p.x+=Math.sin((t+p.y)/6)*.08;p.a-=.008;if(p.a>0){x.fillStyle=`rgba(220,220,235,${p.a})`;x.fillRect(p.x|0,p.y|0,1,2)}});mug=mug.filter(p=>p.a>0);
+    // flexo
+    R(70,86,7,1,"#2a2a33");R(72,78,1,8,"#2a2a33");R(70,75,7,3,"#3a3a48");
+    if(lightsOn){R(71,78,5,1,"#ffd27a");for(let yy=79;yy<86;yy++){const h=Math.round(1+(yy-79)*1.6);R(73-h,yy,h*2,1,"rgba(255,200,120,.10)")}
+      x.fillStyle="rgba(255,190,100,.14)";x.beginPath();x.ellipse(70,87,18,3,0,0,7);x.fill()}
+    // penumbra: la luz sale del flexo (y de la ventana si es de día)
+    const amb=day?.14:.45, g=x.createRadialGradient(68,84,8,68,84,78);
+    g.addColorStop(0,"rgba(5,6,20,0)");g.addColorStop(1,`rgba(5,6,20,${lightsOn?amb:Math.min(.85,amb+.35)})`);
+    x.fillStyle=g;x.fillRect(0,-Math.max(0,oy),W,H+Math.max(0,oy));
+  }
+  // Objetos que se pueden tocar dentro (coordenadas de la escena de 100×140)
+  const HOT_LIST=HOT;
 
   /* ---- dibujo ---- */
   function digits(s,ox,oy2,c){let cx=ox;[...s].forEach((ch,i)=>{if(i===2){if(t%40<26){R(cx,oy2+1,1,1,c);R(cx,oy2+3,1,1,c)}cx+=2}const d=DIG[ch]||DIG[0];for(let k=0;k<15;k++)if(d[k]==="1")R(cx+k%3,oy2+(k/3|0),1,1,c);cx+=4})}
@@ -220,7 +320,7 @@ function mount(cv, get){
     if(S.mode&&S.mode!==mode){
       const prev=mode; mode=S.mode;
       if(prev==="in"&&mode==="work"&&!reduce){seq={k:"in",st:"walk"};hero.vis=true;hero.x=Math.max(hero.x,52)}
-      else if(prev==="work"&&mode==="done"&&!reduce){seq={k:"out",st:"open"};SFX.shutter()}
+      else if(prev==="work"&&mode==="done"&&!reduce){seq=view==="in"?{k:"fade",f:0,to:"out",next:{k:"out",st:"open"}}:{k:"out",st:"open"};if(view!=="in")SFX.shutter()}
       else place(mode);
       if(prev==="in"&&mode==="work"&&reduce){place(mode);clac()}
       if(prev==="work"&&mode==="done"&&reduce){place(mode);clac()}
@@ -229,9 +329,10 @@ function mount(cv, get){
 
     const lightsOn=!blackout||(blackout<12&&t%3===0);
     x.setTransform(1,0,0,1,0,0);
-    if(oy>0){x.fillStyle=P.sky[0];x.fillRect(0,0,W,oy)}
+    if(oy>0){x.fillStyle=view==="in"?"#33283a":P.sky[0];x.fillRect(0,0,W,oy)}
     const sx=shake?((t%2)?1:-1):0; if(shake)shake--;
     x.setTransform(1,0,0,1,sx,oy);
+    if(view==="in") drawInterior(lightsOn); else {
     x.drawImage(bg,0,0);
     if(P.stars)for(let i=0;i<14;i++){const a=72+(i*17)%28,b=(i*11)%26+2-Math.min(0,0);if((t+i*13)%90<70)R(a,b,1,1,i%3?"#8f95c9":"#e9e4c8")}
     if(P.stars&&oy>0)for(let i=0;i<10;i++){const a=(i*29)%W,b=-((i*13)%oy)-2;if((t+i*7)%100<80)R(a,b,1,1,"#8f95c9")}
@@ -286,6 +387,7 @@ function mount(cv, get){
     if(card){card.k+=1/22;const k=Math.min(1,card.k);R(card.x0+(59-card.x0)*k,card.y0+(90-card.y0)*k-Math.sin(k*3.14)*5,3,2,"#f2e8c9");if(k>=1){card=null;cardDone=1}}
     sparks.forEach(s=>{s.x+=s.vx;s.y+=s.vy;s.vy+=.06;s.l--;if(s.l>0)R(s.x,s.y,1,1,s.l%4<2?"#ffd27a":"#fff3c4")});sparks=sparks.filter(s=>s.l>0);
     if(rain)drops.forEach(d=>{d.y+=d.v;d.x-=.4;if(d.y>119+Math.random()*20){if(Math.random()<.5){R(d.x-1,d.y,1,1,"rgba(180,190,240,.5)");R(d.x+1,d.y,1,1,"rgba(180,190,240,.5)")}d.y=-4-Math.random()*oy;d.x=Math.random()*(W+10)}R(d.x,d.y,1,3,pname==="noche"?"rgba(140,155,220,.45)":"rgba(220,228,245,.35)")});
+    }
     // textos flotantes (+XP, monedas…)
     x.font="bold 7px 'Tiny5',monospace";x.textAlign="center";
     floats.forEach(f=>{if(f.d>0){f.d--;return}f.l++;const a=1-f.l/50;if(a<=0)return;x.fillStyle=`rgba(5,6,15,${a})`;x.fillText(f.text,f.x+.6,f.y-f.l*.5+.6);x.globalAlpha=a;x.fillStyle=f.color;x.fillText(f.text,f.x,f.y-f.l*.5);x.globalAlpha=1});
@@ -293,6 +395,7 @@ function mount(cv, get){
     x.setTransform(1,0,0,1,0,0);
     if(blackout){x.fillStyle="rgba(2,3,12,.45)";x.fillRect(0,0,W,H);blackout--;if(blackout===0&&onEvent)onEvent("luz")}
     if(flash){x.fillStyle=`rgba(255,240,200,${flash/14})`;x.fillRect(0,0,W,H);flash--}
+    if(fade){x.fillStyle=`rgba(3,3,10,${fade})`;x.fillRect(0,0,W,H)}
     if(banner){banner.l++;const a=banner.l<10?banner.l/10:banner.l>70?(90-banner.l)/20:1;
       x.globalAlpha=Math.max(0,a);x.fillStyle="rgba(5,6,15,.8)";x.fillRect(0,oy+44,W,16);x.fillStyle="#ffd27a";x.font="bold 8px 'Tiny5',monospace";x.fillText(banner.text,W/2,oy+55);x.globalAlpha=1;
       if(banner.l>=90)banner=null}
@@ -309,13 +412,15 @@ function mount(cv, get){
   const S0=get()||{}; rain=!!S0.rain; mode=S0.mode||"in"; place(mode); setPal();
   if(reduce){frame();const iv=setInterval(()=>{if(!alive)return clearInterval(iv);if(!document.hidden&&cv.offsetParent)frame()},1000)}
   else raf=requestAnimationFrame(loop);
-  const onR=()=>{resize();pname="";};addEventListener("resize",onR);
+  const onR=()=>{resize();pname="";if(onView)onView(view)};addEventListener("resize",onR);
 
   return {
     resize:onR,
     busy,
     event,
     set onEvent(f){onEvent=f},
+    set onView(f){onView=f},
+    geom(){return {H,oy,view}},
     // API común con la escena anterior para las celebraciones de rpgFx()
     // en esta escena el golpe es el «clac» del reloj: sin textos de vida
     attack(text,crit){if(crit)addFloat("¡Puntual!","#ffd27a",60,74)},
@@ -350,5 +455,5 @@ function envelope(cv){
   r(21,14,6,6,"#c0504d");r(22,15,4,4,"#a33d3a");r(23,16,2,2,"#d9706b");
   r(8,22,14,1,"#cbbd95");r(8,24,10,1,"#cbbd95");
 }
-window.MTNight={mount, face, paint, envelope, sfx:SFX, setSound(on){soundOn=!!on}};
+window.MTNight={mount, face, paint, envelope, HOT, sfx:SFX, setSound(on){soundOn=!!on}};
 })();
