@@ -238,7 +238,7 @@ function renderHoy(){
   $("v-hoy").innerHTML=`${cfg.rpg?rpgMini():""}
   <div class="visor">
     <div class="vtop">
-      <div><small>Horas extra del periodo</small><div class="vnum num">${fmt(pt.extra)}</div><div class="vrange num">${shortD(per.start)} – ${shortD(per.end)}</div></div>
+      <div><small>Horas extra del periodo</small><div class="vnum num" data-count="${pt.extra}" data-fmt="min" data-key="hoy-extra">${fmt(pt.extra)}</div><div class="vrange num">${shortD(per.start)} – ${shortD(per.end)}</div></div>
       <button class="addx" id="b-x" aria-label="Añadir horas extra"><span>+</span>Extra</button>
     </div>
     <div class="vfoot num"><span>Festivas <b>${fmt(pt.festH)}</b></span><span>Trabajadas <b>${fmt(pt.worked)}</b></span><span>${left===0?"Cierra hoy":`Cierra en <b>${left}</b> ${left===1?"día":"días"}`}</span></div>
@@ -559,7 +559,7 @@ function renderNomina(){
     ${simOn?renderSim(per,E):ready?`
     <div class="nres">
       <small>Neto estimado</small>
-      <div class="n num">≈ ${eur(E.neto)}</div>
+      <div class="n num" data-count="${E.neto}" data-fmt="eur" data-key="nom-neto">≈ ${eur(E.neto)}</div>
       <div class="b num">Bruto ${eur(E.bruto)}</div>
     </div>
     <div class="card">
@@ -1100,7 +1100,7 @@ document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(!$("report").hid
 document.addEventListener("click",e=>{
   const ed=e.target.closest("[data-edit]"); if(ed){openEditor(ed.dataset.edit);return}
   if(e.target.closest("[data-close]")) closeSheet();
-  const tb=e.target.closest("[data-tab]"); if(tb){tab=tb.dataset.tab;render();window.scrollTo(0,0)}
+  const tb=e.target.closest("[data-tab]"); if(tb){tab=tb.dataset.tab;enterView();render();window.scrollTo(0,0)}
 });
 
 let tt, undoFn=null;
@@ -1121,6 +1121,28 @@ function punch(s, nr, msg){
   toast(msg, ()=>{setRec(s,prev?clone(prev):null); closeSheet(); toast("Deshecho")});
 }
 
+/* ---------- animaciones generales ---------- */
+// Al cambiar de pestaña, el contenido entra escalonado (ver .enter en el CSS)
+function enterView(){
+  if(reduce) return;
+  const v=$("v-"+tab); if(!v) return;
+  v.classList.remove("enter"); void v.offsetWidth; v.classList.add("enter");
+  clearTimeout(v._et); v._et=setTimeout(()=>v.classList.remove("enter"),1100);
+}
+// Números que cuentan hasta su valor cuando cambian (o al entrar en la pestaña)
+var countPrev={};
+function animateCounts(){
+  document.querySelectorAll("[data-count]").forEach(el=>{
+    if(!el.offsetParent) return;
+    const key=el.dataset.key, to=Number(el.dataset.count)||0, entering=el.closest(".enter");
+    const from = countPrev[key]==null||entering ? 0 : countPrev[key];
+    countPrev[key]=to;
+    if(reduce || from===to) return;
+    const f=el.dataset.fmt==="eur"?v=>"≈ "+eur(v):v=>fmt(v), t0=performance.now(), d=750;
+    const step=now=>{const k=Math.min(1,(now-t0)/d), e=1-Math.pow(1-k,3);el.textContent=f(from+(to-from)*e);if(k<1)requestAnimationFrame(step)};
+    requestAnimationFrame(step);
+  });
+}
 function render(){
   applySkin();
   rpgNow=null;
@@ -1129,7 +1151,7 @@ function render(){
   ["hoy","mes","nomina","ajustes","rpg"].forEach(k=>{$("v-"+k).hidden=k!==tab});
   document.querySelectorAll("nav.tabs button").forEach(b=>{if(b.dataset.tab===tab)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
   if(tab==="hoy")renderHoy(); else if(tab==="mes")renderMes(); else if(tab==="nomina")renderNomina(); else if(tab==="rpg")renderRPG(); else renderAjustes();
-  rpgCheck();
+  rpgCheck(); animateCounts();
   if(!$("quick").hidden) renderQuick();
 }
 setInterval(()=>{if(tab==="hoy" && !$("sheet").classList.contains("show"))renderHoy()},30000);
@@ -1205,7 +1227,7 @@ render();
 
 /* ---------- fichaje rápido desde fuera de la app (acceso directo ?fichar) ---------- */
 /* ---------- modo RPG (motor en js/rpg.js, escena en js/escena.js; todo sale de los fichajes) ---------- */
-var rpgNow=null, scenes=[]; // var: render() se llama antes de llegar aquí
+var rpgNow=null, scenes=[], heroTab="estado", shopSlot="H"; // var: render() se llama antes de llegar aquí
 function rpgInv(){const v=Object.assign({owned:[],equip:{}},cfg.rpgInv||{});v.owned=v.owned||[];v.equip=v.equip||{};return v}
 function rpg(){
   if(rpgNow) return rpgNow;
@@ -1218,11 +1240,14 @@ function rpgLook(R){return MTRPG.lookOf(R.rank.tier, rpgInv())}
 function setRPG(on){
   if(!!cfg.rpg===on) return;
   cfg.rpg=on; persistCfg(); rpgNow=null;
-  if(on){const R=rpg();ls.set("rpgSeen",{L:R.L,ach:R.ach.filter(a=>a.ok).map(a=>a.id)});MTScene.sfx.level()}
+  if(on){const R=rpg();ls.set("rpgSeen",{L:R.L,ach:R.ach.filter(a=>a.ok).map(a=>a.id),won:R.won});MTScene.sfx.level()}
+  if(!$("quick").hidden) openQuick();
   render(); toast(on?"Modo RPG activado":"Modo normal");
 }
 function xpBar(R){const pct=Math.max(0,Math.min(100,(R.xp-R.from)/(R.to-R.from)*100));return `<div class="xpbar" role="img" aria-label="${R.xp-R.from} de ${R.to-R.from} puntos de experiencia"><i style="width:${pct}%"></i></div>`}
 function bossBar(b){const pct=b.max?b.hp/b.max*100:0;return `<div class="hpbar" role="img" aria-label="Vida del jefe: ${b.hp} de ${b.max}"><i style="width:${pct}%"></i></div>`}
+// barra por segmentos, estilo videojuego
+function segBar(v,max,cls,n){n=n||12;const on=max?Math.round(v/max*n):0;let h="";for(let i=0;i<n;i++)h+=`<i class="${i<on?"on":""}" style="--i:${i}"></i>`;return `<div class="gbar ${cls}" role="img" aria-label="${v} de ${max}">${h}</div>`}
 var coinIco=`<i class="coin" aria-hidden="true"></i>`;
 function rpgMini(){
   const R=rpg(), b=R.boss;
@@ -1237,110 +1262,135 @@ function rpgMini(){
 var avaTimer=null, avaFrame=0;
 function paintAvatars(){
   if(!cfg.rpg) return;
-  const look=rpgLook(rpg());
+  const R=rpg(), look=rpgLook(R), inv=rpgInv();
+  const lookFor=c=>{const id=c.dataset.prev;if(!id)return look;const it=MTRPG.SHOP.find(x=>x.id===id);const v=clone(inv);v.equip[it.slot]=it.id;return MTRPG.lookOf(R.rank.tier,v)};
   const list=[...document.querySelectorAll("canvas.ava")].filter(c=>c.offsetParent);
-  list.forEach(c=>MTScene.paint(c,look,avaFrame));
+  list.forEach(c=>MTScene.paint(c,lookFor(c),avaFrame));
   clearInterval(avaTimer);
   if(list.length && !reduce) avaTimer=setInterval(()=>{
     if(document.hidden) return; avaFrame^=1;
-    document.querySelectorAll("canvas.ava").forEach(c=>{if(c.offsetParent)MTScene.paint(c,look,avaFrame)});
+    document.querySelectorAll("canvas.ava").forEach(c=>{if(c.offsetParent)MTScene.paint(c,lookFor(c),avaFrame)});
   },650);
+}
+// Lo que dice el jefe según cómo va tu día
+function taunts(){
+  const q=quickState(), R=rpg(), b=R.boss;
+  if(b&&b.max&&!b.hp) return ["Sin fuerzas…","Esto no ha acabado","Uf…"];
+  if(q.mode==="tipo") return ["Recupérate pronto","Te espero a la vuelta"];
+  if(q.p.rest||q.p.fest) return q.c.worked?["¿Trabajando hoy?","Ni en tu día libre…"]:["Zzz…","Hoy descanso yo también","Disfruta tu día"];
+  if(q.mode==="in"){const diff=toMin(q.p.e)-toMin(nowHM());return diff>0?["Te espero en la puerta","El reloj corre…","¿Vienes hoy?"]:["¡Llegas tarde!","Tic, tac…","Ese fichaje no se hace solo"]}
+  if(q.mode==="out"||q.mode==="outn") return ["¿Aún aguantas?","¡No llegarás al final!","Quedan horas…"];
+  return ["Mañana me vengo…","Hoy ganas tú","Volveré más fuerte"];
 }
 function mountScenes(){
   scenes=scenes.filter(s=>s.cv.isConnected);
   document.querySelectorAll("canvas.scene").forEach(cv=>{
     if(cv.dataset.m) return; cv.dataset.m="1";
-    scenes.push({cv, sc:MTScene.mount(cv,()=>{if(!cfg.rpg)return null;const R=rpg();return {look:rpgLook(R),boss:R.boss}})});
+    scenes.push({cv, sc:MTScene.mount(cv,()=>{if(!cfg.rpg)return null;const R=rpg(), h=new Date().getHours(), d=new Date().getDate();
+      return {look:rpgLook(R),boss:R.boss,rain:R.event.id==="lluvia"||((h>=21||h<6)&&d%3===0),taunts:taunts()}},cv.dataset.mode)});
   });
 }
 function activeScene(){const s=scenes.find(x=>x.cv.isConnected&&x.cv.offsetParent);return s?s.sc:null}
-// Tras cambiar un día: animación en la escena visible (golpe al jefe, experiencia, monedas, nivel)
+// Tras cambiar un día: animación en la escena visible (golpe, crítico, experiencia, monedas, nivel)
 function rpgFx(b4){
   if(!cfg.rpg||!b4) return;
   const A=rpg(), sc=activeScene(); if(!sc) return;
-  if(A.boss&&b4.boss&&A.boss.start===b4.boss.start&&A.boss.hp<b4.boss.hp) sc.attack(`-${b4.boss.hp-A.boss.hp} HP`);
+  const hit=A.boss&&b4.boss&&A.boss.start===b4.boss.start&&A.boss.hp<b4.boss.hp;
+  const qa=A.quests[1], qb=b4.quests[1], crit=!!(qa&&qb&&qa.t===qb.t&&qa.done&&!qb.done);
+  if(hit) sc.attack(`-${b4.boss.hp-A.boss.hp} HP`,crit);
   const dx=A.xp-b4.xp, dc=A.earned-b4.earned;
-  if(dx>0) sc.gain(`+${dx} XP`,null,500);
+  if(dx>0) sc.gain(`+${dx} XP`,null,hit?650:100);
   if(dc>0) sc.coin(`+${dc}`);
-  if(A.L>b4.L) setTimeout(()=>sc.level(),1000);
-  else if(!(A.boss&&b4.boss&&A.boss.hp<b4.boss.hp) && dx<=0 && dc<=0) MTScene.sfx.tap();
+  if(A.L>b4.L) setTimeout(()=>sc.level(),1100);
+  else if(!hit && dx<=0 && dc<=0) MTScene.sfx.tap();
 }
 function questList(R){
-  return `<ul class="quests">${R.quests.map(q=>`<li class="${q.done?"ok":q.fail?"ko":""}"><i aria-hidden="true">${q.done?"✓":q.fail?"✗":""}</i><span>${q.t}${q.note?`<small>${q.note}</small>`:""}</span><em>${q.rw}</em></li>`).join("")}
-    ${R.week&&R.week.total?`<li class="${R.week.done>=R.week.total?"ok":""} wk"><i aria-hidden="true">${R.week.done>=R.week.total?"✓":""}</i><span>Misión semanal: ficha todos tus días<small>${R.week.done} de ${R.week.total} días esta semana</small></span><em>+${MTRPG.XP.semana} XP · ${coinIco}${MTRPG.CR.semana}</em></li>`:""}</ul>`;
+  return `<ul class="quests">${R.quests.map((q,i)=>`<li class="${q.done?"ok":q.fail?"ko":""}" style="--i:${i}"><i aria-hidden="true">${q.done?"✓":q.fail?"✗":""}</i><span>${q.t}${q.note?`<small>${q.note}</small>`:""}</span><em>${q.rw}</em></li>`).join("")}
+    ${R.week&&R.week.total?`<li class="${R.week.done>=R.week.total?"ok":""} wk" style="--i:5"><i aria-hidden="true">${R.week.done>=R.week.total?"✓":""}</i><span>Misión semanal: ficha todos tus días<small>${R.week.done} de ${R.week.total} días esta semana</small></span><em>+${MTRPG.XP.semana} XP</em></li>`:""}</ul>`;
+}
+
+/* ---------- pestaña Héroe: menú de juego ---------- */
+var HERO_TABS=[["estado","Estado"],["misiones","Misiones"],["tienda","Tienda"],["diario","Diario"],["logros","Logros"]];
+function heroPanel(R){
+  const b=R.boss, X=MTRPG.XP, inv=rpgInv();
+  const fdate=x=>{const d=parse(x);return `${d.getDate()} ${MON[d.getMonth()].slice(0,3)}`};
+  if(heroTab==="misiones") return `
+    <div class="gpanel evt"><small>Evento de hoy</small><b>${R.event.name}</b><span>${R.event.desc}</span></div>
+    <div class="gpanel"><h3>Misiones de hoy</h3>${questList(R)}</div>
+    ${b?`<div class="gpanel"><h3>Jefe del periodo</h3><div class="bs-name">${b.name}</div>${segBar(b.hp,b.max,"hp",16)}
+      <p class="hint num">${b.max?(b.hp?`Vida ${b.hp} de ${b.max}. Cada día de trabajo que fichas le quita uno. Si los fichas todos, cae el ${fdate(b.end)}: +${X.jefe} XP.`:`¡Sin vida! Cae al cerrar el periodo el ${fdate(b.end)}.`):"Este periodo no tienes días de trabajo previstos."}</p></div>`:""}`;
+  if(heroTab==="tienda"){
+    const items=MTRPG.SHOP.filter(i=>i.slot===shopSlot);
+    return `<div class="gpanel">
+      <div class="shop-head"><span>Tienes</span><b class="num">${coinIco}${R.coins}</b>${R.event.shop?`<em>Hoy −20 %</em>`:""}</div>
+      <div class="chips shop-slots" role="tablist">${Object.entries(MTRPG.SLOTS).map(([k,v])=>`<button class="chip" data-slot="${k}" aria-pressed="${k===shopSlot}">${v}</button>`).join("")}</div>
+      <div class="shgrid">${items.map((it,i)=>{
+        const own=inv.owned.some(o=>o.id===it.id), eq=inv.equip[it.slot]===it.id, pr=MTRPG.price(it,R.event), lock=R.L<it.minL;
+        const act = eq?`<button class="chip" data-unequip="${it.slot}" aria-pressed="true">Puesto</button>`
+          : own?`<button class="chip" data-equip="${it.id}">Ponerse</button>`
+          : lock?`<span class="shlock">Nivel ${it.minL}</span>`
+          : `<button class="chip buy" data-buy="${it.id}" ${R.coins<pr?"disabled":""}>${coinIco}${pr}${pr<it.price?` <s>${it.price}</s>`:""}</button>`;
+        return `<div class="shitem${eq?" on":""}${lock?" lock":""}" style="--i:${i}"><canvas class="ava prev" width="64" height="64" data-prev="${it.id}" aria-hidden="true"></canvas><b>${it.name}</b>${act}</div>`}).join("")}</div>
+      <p class="hint">Las monedas se ganan fichando, descansando, con misiones y derrotando jefes. Todo es estético.</p></div>`;
+  }
+  if(heroTab==="diario") return `
+    <div class="gpanel"><h3>Diario de batalla</h3>
+    ${R.log.length?`<ul class="blog">${R.log.slice(0,20).map((l,i)=>`<li class="${l.k}" style="--i:${Math.min(i,8)}"><span class="num">${fdate(l.s)}</span><p>${escH(l.text)}</p>${l.xp?`<em class="num">+${l.xp}</em>`:""}</li>`).join("")}</ul>`:`<p class="hint">Aún no hay nada. Ficha tu primer día y empieza la historia.</p>`}</div>
+    ${R.bosses.filter(x=>x.closed&&x.max).length?`<div class="gpanel"><h3>Jefes</h3><ul class="bosslist">${R.bosses.filter(x=>x.closed&&x.max).reverse().map(x=>`<li class="${x.defeated?"won":""}"><b>${x.name}</b><span>${fdate(x.start)} – ${fdate(x.end)}</span><em>${x.defeated?"Derrotado":`Escapó (${x.hp})`}</em></li>`).join("")}</ul></div>`:""}`;
+  if(heroTab==="logros") return `<div class="gpanel"><h3>Logros <span class="hint">${R.ach.filter(a=>a.ok).length}/${R.ach.length}</span></h3>
+    <div class="achs">${R.ach.map((a,i)=>`<div class="ach${a.ok?" ok":""}" style="--i:${i}"><i aria-hidden="true">${a.ok?"★":"☆"}</i><b>${a.name}</b><small>${a.desc}</small></div>`).join("")}</div></div>`;
+  // estado
+  return `
+    <div class="gpanel ficha">
+      <canvas class="ava big" width="96" height="96" aria-hidden="true"></canvas>
+      <div><div class="f-lv">Nivel <b class="num">${R.L}</b></div><div class="f-rank">${R.rank.name}${R.rank.next?` · ${R.rank.next.name} en el nivel ${R.rank.next.min}`:""}</div>
+        ${segBar(R.xp-R.from,R.to-R.from,"xp",14)}<div class="f-xp num">${R.xp-R.from} / ${R.to-R.from} XP</div></div>
+    </div>
+    <div class="gpanel"><h3>Atributos</h3>
+      <div class="attrs">${R.attrs.map((a,i)=>`<div class="attr" style="--i:${i}"><span>${a.k}</span>${segBar(a.v,100,a.k==="Energía"?"en":"at",10)}<b class="num">${a.v}</b></div>`).join("")}</div>
+      <p class="hint">${R.run>=7?`<b>Llevas ${R.run} días seguidos trabajando.</b> Tu personaje está agotado: descansar le recarga la energía.`:R.run>=5?`Llevas ${R.run} días seguidos trabajando. Se acerca un descanso.`:"Energía en forma."}</p></div>
+    <div class="gpanel"><div class="stats num">
+      <div style="--i:0"><b>${R.days}</b><small>días fichados</small></div><div style="--i:1"><b>${R.streak}</b><small>racha actual</small></div><div style="--i:2"><b>${R.best}</b><small>mejor racha</small></div>
+      <div style="--i:3"><b>${R.won}</b><small>jefes derrotados</small></div><div style="--i:4"><b>${R.rests}</b><small>descansos</small></div><div style="--i:5"><b>${R.ach.filter(a=>a.ok).length}</b><small>logros</small></div></div></div>
+    <details class="gpanel"><summary>Cómo se gana experiencia</summary>
+      <table class="ntable num">
+        <tr><td>Fichar un día</td><td>+${X.dia}</td></tr><tr><td>Entrar a tu hora (crítico)</td><td>+${X.puntual}</td></tr>
+        <tr><td>Completar el turno</td><td>+${X.completo}</td></tr><tr><td>Racha (cada 5 días)</td><td>+1…5</td></tr>
+        <tr><td>Descanso sin trabajar</td><td>+${X.descanso}</td></tr><tr><td>Misión semanal</td><td>+${X.semana}</td></tr>
+        <tr><td>Jefe del periodo</td><td>+${X.jefe}</td></tr><tr><td>Logro</td><td>+${X.logro}</td></tr></table>
+      <p class="disc">Las horas extra no dan experiencia: aquí se premia la constancia, no echar más horas. Vacaciones y bajas no rompen la racha.</p></details>`;
 }
 function renderRPG(){
-  const R=rpg(), b=R.boss, X=MTRPG.XP, inv=rpgInv(), sound=cfg.rpgSound!==false;
-  const fdate=x=>{const d=parse(x);return `${d.getDate()} ${MON[d.getMonth()].slice(0,3)}`};
-  const done=R.bosses.filter(x=>x.closed);
-  const shop=Object.keys(MTRPG.SLOTS).map(slot=>`<div class="shslot"><h4>${MTRPG.SLOTS[slot]}</h4><div class="shgrid">${MTRPG.SHOP.filter(i=>i.slot===slot).map(it=>{
-    const own=inv.owned.some(o=>o.id===it.id), eq=inv.equip[slot]===it.id, pr=MTRPG.price(it,R.event), lock=R.L<it.minL;
-    const act = eq?`<button class="chip" data-unequip="${slot}" aria-pressed="true">Puesto</button>`
-      : own?`<button class="chip" data-equip="${it.id}">Ponerse</button>`
-      : lock?`<span class="shlock">Nivel ${it.minL}</span>`
-      : `<button class="chip buy" data-buy="${it.id}" ${R.coins<pr?"disabled":""}>${coinIco}${pr}${pr<it.price?` <s>${it.price}</s>`:""}</button>`;
-    return `<div class="shitem${eq?" on":""}${lock?" lock":""}"><span class="sw" style="background:${it.c}"></span><b>${it.name}</b>${act}</div>`}).join("")}</div></div>`).join("");
-  $("v-rpg").innerHTML=`
-  <div class="rpgtop">
-    <canvas class="scene" aria-label="Tu personaje frente al jefe del periodo" role="img"></canvas>
-    <div class="rt-hud">
-      <div class="rt-row"><b>NV ${R.L}</b><span>${R.rank.name}</span><em class="num">${coinIco}${R.coins}</em><button class="rt-snd" id="r-snd" aria-pressed="${sound}" aria-label="Sonido">${sound?"♪":"✕"}</button></div>
-      ${xpBar(R)}
-      <div class="rt-xp num">${R.xp-R.from} / ${R.to-R.from} XP para el nivel ${R.L+1}${R.rank.next?` · ${R.rank.next.name} en el nivel ${R.rank.next.min}`:""}</div>
-    </div>
-  </div>
-  <div class="card evt"><small>Evento de hoy</small><b>${R.event.name}</b><span>${R.event.desc}</span></div>
-  <div class="card"><h3>Misiones de hoy</h3>${questList(R)}</div>
-  ${b?`<div class="card boss">
-    <h3>Jefe del periodo</h3>
-    <div class="bs-name">${b.name}</div>
-    ${bossBar(b)}
-    <p class="hint num" style="margin:8px 0 0">${b.max?(b.hp?`Vida ${b.hp} de ${b.max}. Cada día de trabajo que fichas le quita uno. Si los fichas todos, cae el ${fdate(b.end)}: +${X.jefe} XP y ${MTRPG.CR.jefe} monedas.`:`¡Sin vida! Cae al cerrar el periodo el ${fdate(b.end)}.`):"Este periodo no tienes días de trabajo previstos."}</p>
-    ${done.length?`<p class="hint" style="margin:6px 0 0">Jefes derrotados: <b>${R.won} de ${done.length}</b></p>`:""}
-  </div>`:""}
-  <div class="card">
-    <h3>Atributos</h3>
-    <div class="attrs">${R.attrs.map(a=>`<div class="attr"><span>${a.k}</span><div class="abar"><i style="width:${a.v}%"></i></div><b class="num">${a.v}</b></div>`).join("")}</div>
-    <p class="hint" style="margin:10px 0 0">${R.run>=7?`<b>Llevas ${R.run} días seguidos trabajando.</b> Tu personaje está agotado: descansar le recarga la energía.`:R.run>=5?`Llevas ${R.run} días seguidos trabajando. Se acerca un descanso.`:"Energía en forma."} Racha actual ${R.streak} · mejor ${R.best} · ${R.days} días fichados.</p>
-  </div>
-  <div class="card shop">
-    <h3>Tienda</h3>
-    <p class="hint">Tienes ${coinIco}<b class="num">${R.coins}</b> monedas. Se ganan fichando, descansando, completando misiones y derrotando jefes. Todo es estético.${R.event.shop?" <b>Hoy hay descuento.</b>":""}</p>
-    ${shop}
-  </div>
-  <div class="card">
-    <h3>Diario de batalla</h3>
-    ${R.log.length?`<ul class="blog">${R.log.slice(0,12).map(l=>`<li class="${l.k}"><span class="num">${fdate(l.s)}</span><p>${escH(l.text)}</p>${l.xp?`<em class="num">+${l.xp} XP</em>`:""}</li>`).join("")}</ul>`:`<p class="hint">Aún no hay nada. Ficha tu primer día y empieza la historia.</p>`}
-  </div>
-  <div class="card">
-    <h3>Logros <span class="hint">${R.ach.filter(a=>a.ok).length}/${R.ach.length}</span></h3>
-    <div class="achs">${R.ach.map(a=>`<div class="ach${a.ok?" ok":""}"><i aria-hidden="true">${a.ok?"★":"☆"}</i><b>${a.name}</b><small>${a.desc}</small></div>`).join("")}</div>
-  </div>
-  <div class="card">
-    <h3>Cómo se gana experiencia</h3>
-    <table class="ntable num">
-      <tr><td>Fichar un día (entrada y salida)</td><td>+${X.dia}</td></tr>
-      <tr><td>Entrar a tu hora (hasta 5 min tarde)</td><td>+${X.puntual}</td></tr>
-      <tr><td>Completar el turno</td><td>+${X.completo}</td></tr>
-      <tr><td>Racha<small>+1 por cada 5 días seguidos, hasta +5</small></td><td>+1…5</td></tr>
-      <tr><td>Descanso o festivo sin trabajar</td><td>+${X.descanso}</td></tr>
-      <tr><td>Misión semanal</td><td>+${X.semana}</td></tr>
-      <tr><td>Derrotar al jefe del periodo</td><td>+${X.jefe}</td></tr>
-      <tr><td>Cada logro</td><td>+${X.logro}</td></tr>
-    </table>
-    <p class="disc">Las horas extra no dan experiencia: aquí se premia la constancia, no echar más horas. Vacaciones y bajas no rompen la racha. Cada día hay un evento que cambia algo pequeño.</p>
-  </div>`;
-  mountScenes(); paintAvatars();
+  const R=rpg(), sound=cfg.rpgSound!==false, v=$("v-rpg");
+  if(!v.querySelector("canvas.scene")){
+    v.innerHTML=`<div class="hg">
+      <div class="hg-stage"><canvas class="scene" data-mode="band" role="img" aria-label="Tu personaje frente al jefe del periodo"></canvas><div class="hg-hud" id="hg-hud"></div></div>
+      <div class="hg-tabs" role="tablist" id="hg-tabs"></div>
+      <div class="hg-panel" id="hg-panel"></div></div>`;
+    mountScenes();
+  }
+  const b=R.boss;
+  $("hg-hud").innerHTML=`<div class="hh-l"><b>NV ${R.L}</b><span>${R.rank.name}</span></div>
+    <div class="hh-r"><em class="num">${coinIco}${R.coins}</em><button class="gbtn" id="r-snd" aria-pressed="${sound}" aria-label="Sonido">${sound?"♪":"✕"}</button></div>
+    ${segBar(R.xp-R.from,R.to-R.from,"xp",16)}
+    ${b&&b.max?`<div class="hh-boss"><span>${b.name}</span>${segBar(b.hp,b.max,"hp",12)}</div>`:""}`;
+  $("hg-tabs").innerHTML=HERO_TABS.map(([k,l])=>`<button role="tab" data-ht="${k}" aria-selected="${k===heroTab}">${l}</button>`).join("");
+  const pnl=$("hg-panel"), changed=pnl.dataset.t!==heroTab;
+  pnl.innerHTML=heroPanel(R); pnl.dataset.t=heroTab;
+  if(changed){pnl.classList.remove("in");void pnl.offsetWidth;pnl.classList.add("in")}
+  paintAvatars();
   $("r-snd").onclick=()=>{cfg.rpgSound=!(cfg.rpgSound!==false);persistCfg();MTScene.setSound(cfg.rpgSound);if(cfg.rpgSound)MTScene.sfx.coin();renderRPG()};
-  const sv=fn=>{cfg.rpgInv=fn(rpgInv());persistCfg();rpgNow=null;renderRPG();if(!$("quick").hidden)renderQuick()};
-  $("v-rpg").querySelectorAll("[data-buy]").forEach(btn=>btn.onclick=()=>{
+  $("hg-tabs").querySelectorAll("[data-ht]").forEach(t=>t.onclick=()=>{heroTab=t.dataset.ht;MTScene.sfx.open();renderRPG()});
+  v.querySelectorAll("[data-slot]").forEach(t=>t.onclick=()=>{shopSlot=t.dataset.slot;MTScene.sfx.tap();renderRPG()});
+  const sv=fn=>{cfg.rpgInv=fn(rpgInv());persistCfg();rpgNow=null;renderRPG()};
+  v.querySelectorAll("[data-buy]").forEach(btn=>btn.onclick=()=>{
     const it=MTRPG.SHOP.find(x=>x.id===btn.dataset.buy), R2=rpg(), pr=MTRPG.price(it,R2.event);
     if(R2.L<it.minL||R2.coins<pr) return;
-    sv(v=>{v.owned.push({id:it.id,paid:pr});v.equip[it.slot]=it.id;return v});
+    sv(o=>{o.owned.push({id:it.id,paid:pr});o.equip[it.slot]=it.id;return o});
     MTScene.sfx.coin(); toast(`${it.name}: comprado y puesto`);
   });
-  $("v-rpg").querySelectorAll("[data-equip]").forEach(btn=>btn.onclick=()=>{const it=MTRPG.SHOP.find(x=>x.id===btn.dataset.equip);sv(v=>{v.equip[it.slot]=it.id;return v});MTScene.sfx.tap()});
-  $("v-rpg").querySelectorAll("[data-unequip]").forEach(btn=>btn.onclick=()=>{sv(v=>{delete v.equip[btn.dataset.unequip];return v});MTScene.sfx.tap()});
+  v.querySelectorAll("[data-equip]").forEach(btn=>btn.onclick=()=>{const it=MTRPG.SHOP.find(x=>x.id===btn.dataset.equip);sv(o=>{o.equip[it.slot]=it.id;return o});MTScene.sfx.tap()});
+  v.querySelectorAll("[data-unequip]").forEach(btn=>btn.onclick=()=>{sv(o=>{delete o.equip[btn.dataset.unequip];return o});MTScene.sfx.tap()});
 }
 // Celebra subidas de nivel, logros y jefes caídos (solo hacia arriba: deshacer no quita lo celebrado)
 function rpgCheck(){
@@ -1354,10 +1404,11 @@ function rpgCheck(){
   const up=R.L>seen.L;
   if(cayo){const sc=activeScene(); if(sc) setTimeout(()=>sc.defeat(),600)}
   if(!$("quick").hidden || !$("sheet").hidden || !$("report").hidden){
-    setTimeout(()=>toast(up?`¡Subes a nivel ${R.L}!`:cayo?"¡Jefe derrotado!":`Logro: ${nuevos[0].name}`),1900); return;
+    setTimeout(()=>toast(up?`¡Subes a nivel ${R.L}!`:cayo?"¡Jefe derrotado!":`Logro: ${nuevos[0].name}`),2000); return;
   }
   setTimeout(()=>{
     openSheet(`<div class="grab"></div><div class="lvup">
+      <div class="lv-rays" aria-hidden="true"></div>
       <canvas class="ava big" width="128" height="128" aria-hidden="true"></canvas>
       <h3 id="sh-title">${up?`¡Nivel ${R.L}!`:cayo?"¡Jefe derrotado!":"¡Logro nuevo!"}</h3>
       ${up?`<p>Ahora eres <b>${R.rank.name}</b>.${R.rank.next?` En el nivel ${R.rank.next.min} pasarás a ${R.rank.next.name}.`:""}</p>`:""}
@@ -1367,88 +1418,126 @@ function rpgCheck(){
   },700);
 }
 
-/* ---------- pantalla de inicio: fichar rápido, apuntar extras, bajas… y elegir modo ---------- */
+/* ---------- pantalla de inicio ---------- */
 function quickState(){
   const od=nightOpen(), t=todayISO(), s=od||t, r=rec(s)||{}, c=calc(s);
   c.iso=s;
   const mode = od?"outn" : r.tipo?"tipo" : c.open?"out" : (r.e&&r.s)?"done" : "in";
   return {od,t,s,r,c,p:c.p,mode};
 }
-function renderQuick(){
-  const q=quickState(), {r,c,p}=q, d=new Date(), now=nowHM(), on=!!cfg.rpg;
-  const per=periodOf(d), pt=sumRange(per.start,per.end);
-  $("q-date").textContent=`${DOWL[d.getDay()]} ${d.getDate()} de ${MON[d.getMonth()]}`;
-  // escena (solo en modo RPG; el canvas se conserva entre repintados)
-  const st=$("q-stage");
-  if(on){
-    if(!$("q-scene")){st.innerHTML=`<canvas class="scene" id="q-scene" role="img" aria-label="Tu personaje frente al jefe del periodo"></canvas><div class="q-hud" id="q-hud"></div>`;mountScenes()}
-    const R=rpg(), b=R.boss;
-    $("q-hud").innerHTML=`<div class="rt-row"><b>NV ${R.L}</b><span>${R.rank.name}</span><em class="num">${coinIco}${R.coins}</em></div>${xpBar(R)}
-      ${b&&b.max?`<div class="rm-boss"><span>${b.name}</span>${bossBar(b)}<em class="num">${b.hp}/${b.max}</em></div>`:""}`;
-    st.hidden=false;
-  } else {st.innerHTML="";st.hidden=true}
-  let state, btn=null, out=false;
-  if(q.mode==="outn"||q.mode==="out"){
-    out=true; btn=on?"Fichar salida":"Fichar salida";
-    state = q.mode==="outn" ? `Turno de noche · entraste ayer a las ${r.e} · llevas ${fmt(dur(r.e,now))}`
-      : `Entraste a las ${r.e} · llevas ${fmt(dur(r.e,now))}`+(p.rest||p.fest?"":` · sales a las ${p.s}`);
-  } else if(q.mode==="in"){
-    btn=on?"Atacar · fichar entrada":"Fichar entrada";
-    if(p.rest) state="Hoy descansas. Si te llaman, ficha igual: todo cuenta como extra.";
-    else if(p.fest) state="Festivo: lo que trabajes cuenta como horas festivas.";
-    else { const diff=toMin(p.e)-toMin(now);
-      state = diff>0 ? `Tu turno empieza en ${fmt(diff)}` : -diff<p.min ? `Tu turno empezó hace ${fmt(-diff)}` : "Tu turno de hoy ya ha terminado"; }
-  } else if(q.mode==="done"){
-    state=`Hoy: ${r.e} – ${r.s} · ${fmt(c.worked)}`+(c.extra?` · <b class="qx">+${fmt(c.extra)} extra</b>`:"")+(c.festH?` · ${fmt(c.festH)} festivas`:"");
-  } else state=TIPOS[r.tipo]+": hoy no se ficha.";
-  const fest=isFest(q.t);
-  const act=(id,label,extra="")=>`<button class="qa" ${id} ${extra}>${label}</button>`;
-  $("q-main").innerHTML=`
-    <div class="q-clock num${on?" sm":""}">${now}</div>
-    <div class="pills">${pillsFor(c)}</div>
-    <p class="q-state num">${state}</p>
-    ${btn?`<button class="q-btn${out?" out":""}${on?" rpg":""}" id="q-punch"><span>${btn}</span><b class="num">${now}</b></button>`:`<button class="q-done" id="q-edit" aria-label="Editar el día"><span>✓</span><small>Editar</small></button>`}
-    <div class="q-acts" role="group" aria-label="Apuntar">
-      ${q.mode!=="tipo"?act('data-qx="30"',"+30 min extra")+act('data-qx="60"',"+1 h extra")+act('id="q-more"',"Otra extra"):""}
-      ${q.mode==="in"&&!p.rest&&!p.fest?act('id="q-full"',`Turno completo`):""}
-      ${act('id="q-fest"',fest?"Quitar festivo":"Es festivo",`aria-pressed="${fest}"`)}
-      ${act('data-tipo="vac"',"Vacaciones")}${act('data-tipo="baja"',"Baja")}
-      ${act('id="q-day"',"Editar día")}
-    </div>
-    ${on?`<div class="q-evt"><b>${rpg().event.name}</b> · ${rpg().event.desc}</div>${questList(rpg())}`:""}
-    <div class="seg q-mode" role="group" aria-label="Modo de la app"><button id="qm-n" aria-pressed="${!on}">Modo normal</button><button id="qm-r" aria-pressed="${on}">Modo RPG</button></div>
-    <div class="q-per num">Extras del periodo <b>${fmt(pt.extra)}</b> · cierra el ${shortD(per.end)}</div>`;
-  const pb=$("q-punch");
-  if(pb) pb.onclick=()=>{ const n=nowHM();
-    if(out){ if(dur(r.e,n)<2){toast("Acabas de fichar la entrada");return} punch(q.s,Object.assign({},r,{s:n}),"Salida fichada a las "+n) }
-    else punch(q.t,Object.assign({},r,{e:n,s:null}),"Entrada fichada a las "+n);
-    if(navigator.vibrate) try{navigator.vibrate(18)}catch(e){}
-  };
-  const qe=$("q-edit"); if(qe) qe.onclick=()=>openEditor(q.s);
-  $("q-day").onclick=()=>openEditor(q.s);
-  const fb=$("q-full"); if(fb) fb.onclick=()=>punch(q.t,Object.assign({},r,{e:p.e,s:p.s}),"Turno completo apuntado");
-  const mo=$("q-more"); if(mo) mo.onclick=()=>openExtra(q.s);
-  $("q-fest").onclick=()=>{const cur=rec(q.t)||{}, nv=!isFest(q.t), def=!!festName(q.t);
-    punch(q.t,Object.assign({},cur,{fest:nv===def?null:nv}),nv?"Hoy marcado como festivo":"Hoy ya no cuenta como festivo")};
-  $("q-main").querySelectorAll("[data-tipo]").forEach(b=>b.onclick=()=>openEditor(q.t,b.dataset.tipo));
-  $("q-main").querySelectorAll("[data-qx]").forEach(b=>b.onclick=()=>{
-    const m=Number(b.dataset.qx), cur=rec(q.s)||{};
-    punch(q.s,Object.assign({},cur,{x:(Number(cur.x)||0)+m}),`+${fmt(m)} de extra apuntadas`);
-  });
-  $("qm-n").onclick=()=>setRPG(false);
-  $("qm-r").onclick=()=>setRPG(true);
+// Texto de estado común a los dos modos
+function quickInfo(q){
+  const {r,c,p}=q, now=nowHM();
+  if(q.mode==="outn") return {btn:"Salida",state:`Turno de noche · entraste ayer a las ${r.e}`,live:dur(r.e,now),pct:Math.min(1,dur(r.e,now)/Math.max(1,p.min||480))};
+  if(q.mode==="out") return {btn:"Salida",state:`Entraste a las ${r.e}`+(p.rest||p.fest?"":` · sales a las ${p.s}`),live:dur(r.e,now),pct:p.rest||p.fest?0:Math.min(1,dur(r.e,now)/Math.max(1,p.min))};
+  if(q.mode==="in"){
+    let state;
+    if(p.rest) state="Hoy descansas";
+    else if(p.fest) state="Festivo · lo que trabajes cuenta como festivo";
+    else{const diff=toMin(p.e)-toMin(now);state=diff>0?`Tu turno empieza en ${fmt(diff)}`:-diff<p.min?`Tu turno empezó hace ${fmt(-diff)}`:"Tu turno de hoy ya ha terminado"}
+    return {btn:"Entrada",state,pct:0};
+  }
+  if(q.mode==="done") return {btn:null,state:`${r.e} – ${r.s} · ${fmt(c.worked)}`+(c.extra?` · +${fmt(c.extra)} extra`:""),pct:1};
+  return {btn:null,state:TIPOS[r.tipo],pct:0};
 }
-let quickTimer=null;
+function doPunch(q){
+  const n=nowHM(), r=q.r;
+  if(q.mode==="out"||q.mode==="outn"){ if(dur(r.e,n)<2){toast("Acabas de fichar la entrada");return} punch(q.s,Object.assign({},r,{s:n}),"Salida fichada a las "+n) }
+  else punch(q.t,Object.assign({},r,{e:n,s:null}),"Entrada fichada a las "+n);
+  if(navigator.vibrate) try{navigator.vibrate(18)}catch(e){}
+}
+// Menú «Apuntar» / «Objetos»: todo lo que no es fichar
+function openActions(){
+  const q=quickState(), fest=isFest(q.t), game=!!cfg.rpg;
+  const tile=(id,ico,label,dis)=>`<button class="atile" data-a="${id}" ${dis?"disabled":""}><i aria-hidden="true">${ico}</i><span>${label}</span></button>`;
+  openSheet(`<div class="grab"></div><h3 id="sh-title">${game?"Objetos":"Apuntar"}</h3>
+    <div class="atiles">
+      ${tile("x30","＋","30 min extra",q.mode==="tipo")}${tile("x60","＋","1 h extra",q.mode==="tipo")}${tile("xo","⏱","Otra extra",q.mode==="tipo")}
+      ${tile("full","✓","Turno completo",!(q.mode==="in"&&!q.p.rest&&!q.p.fest))}${tile("fest","★",fest?"Quitar festivo":"Es festivo")}${tile("edit","✎","Editar el día")}
+      ${tile("vac","☀","Vacaciones")}${tile("baja","✚","Baja")}${tile("app","→","Entrar en la app")}
+    </div>`);
+  if(game) MTScene.sfx.open();
+  $("sheet-in").querySelectorAll("[data-a]").forEach(b=>b.onclick=()=>{
+    const a=b.dataset.a, cur=rec(q.s)||{};
+    if(a==="x30"||a==="x60"){closeSheet();const m=a==="x30"?30:60;punch(q.s,Object.assign({},cur,{x:(Number(cur.x)||0)+m}),`+${fmt(m)} de extra apuntadas`)}
+    else if(a==="xo") openExtra(q.s);
+    else if(a==="full"){closeSheet();punch(q.t,Object.assign({},q.r,{e:q.p.e,s:q.p.s}),"Turno completo apuntado")}
+    else if(a==="fest"){closeSheet();const c2=rec(q.t)||{}, nv=!isFest(q.t), def=!!festName(q.t);punch(q.t,Object.assign({},c2,{fest:nv===def?null:nv}),nv?"Hoy marcado como festivo":"Hoy ya no cuenta como festivo")}
+    else if(a==="edit") openEditor(q.s);
+    else if(a==="vac"||a==="baja") openEditor(q.t,a);
+    else if(a==="app"){closeSheet();closeQuick()}
+  });
+}
+var typer=null, lastLine="";
+function typeLine(el, text){
+  if(!el) return;
+  if(text===lastLine||reduce){el.textContent=text;lastLine=text;return}
+  lastLine=text; clearInterval(typer); let i=0; el.textContent="";
+  typer=setInterval(()=>{i++;el.textContent=text.slice(0,i);if(i%3===0)MTScene.sfx.blip();if(i>=text.length)clearInterval(typer)},22);
+}
+function renderQuick(){
+  const q=quickState(), I=quickInfo(q), d=new Date(), now=nowHM(), on=!!cfg.rpg;
+  const dateTxt=`${DOWL[d.getDay()]} ${d.getDate()} de ${MON[d.getMonth()]}`;
+  if(on){
+    const R=rpg(), b=R.boss, sound=cfg.rpgSound!==false;
+    let line;
+    const bn=b&&b.max?b.name:"La ciudad";
+    if(q.mode==="tipo") line=`Estás de ${TIPOS[q.r.tipo].toLowerCase()}. ${bn} espera tu vuelta. Recupérate.`;
+    else if(q.mode==="in") line=q.p.rest?`Día libre. ${bn} duerme. Descansar también da experiencia.`:q.p.fest?`Festivo en la ciudad. Si trabajas, cuenta como horas festivas.`:`${bn} vigila la entrada. ${I.state}.`;
+    else if(q.mode==="out"||q.mode==="outn") line=`¡En combate! Llevas ${fmt(I.live)}. ${q.mode==="out"&&!q.p.rest&&!q.p.fest?`Aguanta hasta las ${q.p.s}.`:"Ficha la salida al terminar."}`;
+    else line=`Turno superado: ${fmt(q.c.worked)}${q.c.extra?` (+${fmt(q.c.extra)} extra)`:""}. ${b&&b.max?`${bn} se lame las heridas: le quedan ${b.hp}.`:""}`;
+    line+=` Evento: ${R.event.name}.`;
+    const main = I.btn?`<button class="gcmd main" id="q-punch"><span>▶ ${I.btn==="Entrada"?"Atacar · fichar entrada":"Rematar · fichar salida"}</span><b class="num">${now}</b></button>`
+      : `<button class="gcmd main done" id="q-edit"><span>${q.mode==="done"?"✓ Turno superado":"✎ "+TIPOS[q.r.tipo]}</span><b>Editar</b></button>`;
+    $("g-ui").innerHTML=`
+      <div class="g-top">
+        <div class="g-port"><canvas class="ava" width="48" height="48" aria-hidden="true"></canvas></div>
+        <div class="g-stats"><div class="g-name"><b>NV ${R.L}</b> ${R.rank.name}</div>${segBar(R.xp-R.from,R.to-R.from,"xp",14)}<div class="g-coins num">${coinIco}${R.coins}</div></div>
+        <div class="g-btns"><button class="gbtn" id="g-snd" aria-pressed="${sound}" aria-label="Sonido">${sound?"♪":"✕"}</button><button class="gbtn" id="g-mode" aria-label="Pasar a modo normal">◐</button></div>
+      </div>
+      ${b&&b.max?`<div class="g-boss"><span>${b.name}</span>${segBar(b.hp,b.max,"hp",12)}<em class="num">${b.hp}/${b.max}</em></div>`:""}
+      <div class="g-clock num">${now}<small>${dateTxt}</small></div>
+      <div class="g-dialog">
+        <p class="g-text" id="g-text" aria-live="polite"></p>
+        ${main}
+        <div class="g-row"><button class="gcmd" id="q-plus">Objetos</button><button class="gcmd" id="q-hero">Héroe</button><button class="gcmd" id="q-app">Salir ›</button></div>
+      </div>`;
+    typeLine($("g-text"),line);
+    $("g-snd").onclick=()=>{cfg.rpgSound=!(cfg.rpgSound!==false);persistCfg();MTScene.setSound(cfg.rpgSound);if(cfg.rpgSound)MTScene.sfx.coin();renderQuick()};
+    $("g-mode").onclick=()=>setRPG(false);
+    $("q-hero").onclick=()=>{tab="rpg";closeQuick();window.scrollTo(0,0)};
+    paintAvatars();
+  } else {
+    const R2=46, C=2*Math.PI*R2;
+    $("quick").querySelector(".q-in").innerHTML=`
+      <div class="q-top"><span class="q-date">${dateTxt}</span><button class="q-skip" id="q-app">Entrar ›</button></div>
+      <div class="qn">
+        <div class="qn-clock num">${now.replace(":",'<i class="colon">:</i>')}</div>
+        <div class="qn-shift">${q.mode==="tipo"?TIPOS[q.r.tipo]:q.p.rest?"Descanso":q.p.fest?"Festivo":`${q.p.name} · ${q.p.e}–${q.p.s}`}</div>
+        <button class="qn-btn ${I.btn?(I.btn==="Salida"?"out":"in"):"done"}" id="${I.btn?"q-punch":"q-edit"}" aria-label="${I.btn?`Fichar ${I.btn.toLowerCase()} a las ${now}`:"Editar el día"}">
+          <svg viewBox="0 0 100 100" aria-hidden="true"><circle class="trk" cx="50" cy="50" r="${R2}"/><circle class="prg" cx="50" cy="50" r="${R2}" style="stroke-dasharray:${C};stroke-dashoffset:${C*(1-I.pct)}"/></svg>
+          <span>${I.btn||(q.mode==="done"?"Hecho":"Editar")}</span><b class="num">${I.btn?now:q.mode==="done"?"✓":"✎"}</b>
+        </button>
+        <p class="qn-state num">${I.state}${q.mode==="out"||q.mode==="outn"?` · llevas ${fmt(I.live)}`:""}</p>
+      </div>
+      <div class="qn-foot"><button class="qn-plus" id="q-plus"><i aria-hidden="true">＋</i> Apuntar</button><button class="qn-rpg" id="q-rpg" aria-label="Activar modo RPG">⚔ RPG</button></div>`;
+    $("q-rpg").onclick=()=>setRPG(true);
+  }
+  $("q-app").onclick=closeQuick;
+  $("q-plus").onclick=openActions;
+  const pb=$("q-punch"); if(pb) pb.onclick=()=>{pb.classList.add("hit");doPunch(q)};
+  const qe=$("q-edit"); if(qe) qe.onclick=()=>openEditor(q.s);
+}
+var quickTimer=null;
 function openQuick(){
-  closeSheet(); document.body.classList.add("q-open");
-  $("quick").innerHTML=`<div class="q-in">
-    <div class="q-top"><span class="q-date" id="q-date"></span><button class="q-skip" id="q-app">Entrar en la app ›</button></div>
-    <div class="q-stage" id="q-stage" hidden></div>
-    <div class="q-main" id="q-main"></div></div>`;
-  $("quick").hidden=false; $("q-app").onclick=closeQuick; renderQuick();
+  closeSheet(); document.body.classList.add("q-open"); lastLine="";
+  const on=!!cfg.rpg;
+  $("quick").className=on?"game":"";
+  $("quick").innerHTML=on?`<canvas class="scene" data-mode="full" id="q-scene" role="img" aria-label="Tu personaje frente al jefe del periodo"></canvas><div class="g-ui" id="g-ui"></div>`:`<div class="q-in"></div>`;
+  $("quick").hidden=false; renderQuick(); if(on) mountScenes();
   clearInterval(quickTimer); quickTimer=setInterval(()=>{if(!$("quick").hidden && $("sheet").hidden)renderQuick()},15000);
 }
-function closeQuick(){$("quick").hidden=true;$("quick").innerHTML="";document.body.classList.remove("q-open");clearInterval(quickTimer);render()}
+function closeQuick(){$("quick").hidden=true;$("quick").innerHTML="";document.body.classList.remove("q-open");clearInterval(quickTimer);clearInterval(typer);render()}
 
 function quickClock(){
   let q; try{q=new URLSearchParams(location.search)}catch(e){return}
