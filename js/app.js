@@ -235,7 +235,7 @@ function renderHoy(){
   const per=periodOf(d), pt=sumRange(per.start, per.end);
   const left=Math.round((parse(per.end)-parse(t))/864e5);
 
-  $("v-hoy").innerHTML=`${cfg.rpg?rpgMini():""}
+  $("v-hoy").innerHTML=`${cfg.rpg?rpgMini()+hoyTip():""}
   <div class="visor">
     <div class="vtop">
       <div><small>Horas extra del periodo</small><div class="vnum num" data-count="${pt.extra}" data-fmt="min" data-key="hoy-extra">${fmt(pt.extra)}</div><div class="vrange num">${shortD(per.start)} – ${shortD(per.end)}</div></div>
@@ -558,10 +558,13 @@ function renderNomina(){
     ${ready?`<div class="seg" role="group" aria-label="Modo de nómina" style="margin-bottom:12px"><button id="nm-est" aria-pressed="${!simOn}">Mi estimación</button><button id="nm-sim" aria-pressed="${simOn}">Simular horas</button></div>`:""}
     ${simOn?renderSim(per,E):ready?`
     <div class="nres">
+      ${cfg.rpg?'<canvas class="sobre" width="48" height="30" role="img" aria-label="Sobre de la nómina"></canvas>':""}
       <small>Neto estimado</small>
       <div class="n num" data-count="${E.neto}" data-fmt="eur" data-key="nom-neto">≈ ${eur(E.neto)}</div>
       <div class="b num">Bruto ${eur(E.bruto)}</div>
     </div>
+    ${pacoTip(E.t.extra>0?`Llevas ${fmt(E.t.extra)} de extra este periodo, unos ${eur(E.exE)}. Si en la nómina pone menos, se reclama.`:"Este periodo no llevas horas extra. Tu espalda te lo agradece.",
+      "paco",E.t.extra>0?"normal":"happy")}
     <div class="card">
       <table class="ntable num">
         <tr><td>Salario fijo<small>base + complementos${E.prorrata?" + prorrata pagas":""}</small></td><td>${eur(E.mensual)}</td></tr>
@@ -801,7 +804,7 @@ function renderAjustes(){
   </div>
   <div class="card">
     <h3>Aspecto</h3>
-    <div class="seg"><button id="k-neon" aria-pressed="${skin()==="neon"}">Neón</button><button id="k-clasico" aria-pressed="${skin()==="clasico"}">Clásico</button></div>
+    ${cfg.rpg?`<p class="hint" style="margin:0 0 10px">Con el modo RPG activo, toda la app usa el aspecto «La jornada». Este es el que vuelve al quitarlo.</p>`:""}<div class="seg"><button id="k-neon" aria-pressed="${skin()==="neon"}">Neón</button><button id="k-clasico" aria-pressed="${skin()==="clasico"}">Clásico</button></div>
   </div>
   <div class="card">
     <h3>Modo RPG</h3>
@@ -1143,6 +1146,14 @@ function animateCounts(){
     requestAnimationFrame(step);
   });
 }
+// Un comentario de Paco en las pantallas de la app (solo con el modo RPG)
+function pacoTip(text,who,exp){
+  if(!cfg.rpg) return "";
+  who=who||"paco";
+  return `<div class="paco-tip"><canvas width="16" height="16" data-face="${who}:${exp||"normal"}" aria-hidden="true"></canvas><p><small>${who==="paco"?"Paco, el vigilante":"Mancha, la gata"}</small>${escH(text)}</p></div>`;
+}
+function paintEnvelopes(){document.querySelectorAll("canvas.sobre").forEach(c=>{if(!c.dataset.done){MTNight.envelope(c);c.dataset.done="1"}})}
+function paintFaces(){document.querySelectorAll("canvas[data-face]").forEach(c=>{if(c.dataset.done===c.dataset.face)return;const [w,e]=c.dataset.face.split(":");MTNight.face(c.getContext("2d"),w,e);c.dataset.done=c.dataset.face})}
 function render(){
   applySkin();
   rpgNow=null;
@@ -1151,7 +1162,7 @@ function render(){
   ["hoy","mes","nomina","ajustes","rpg"].forEach(k=>{$("v-"+k).hidden=k!==tab});
   document.querySelectorAll("nav.tabs button").forEach(b=>{if(b.dataset.tab===tab)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
   if(tab==="hoy")renderHoy(); else if(tab==="mes")renderMes(); else if(tab==="nomina")renderNomina(); else if(tab==="rpg")renderRPG(); else renderAjustes();
-  rpgCheck(); animateCounts();
+  rpgCheck(); animateCounts(); paintFaces(); paintEnvelopes();
   if(!$("quick").hidden) renderQuick();
 }
 setInterval(()=>{if(tab==="hoy" && !$("sheet").classList.contains("show"))renderHoy()},30000);
@@ -1168,11 +1179,28 @@ function skin(){return cfg.skin||"neon"}
 const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
 let rainOn=false, drops=[], cv=$("rain"), cx=cv.getContext("2d"), W=0,H=0,DPR=1, skyline=null;
 function applySkin(){
-  const k=skin();
+  const k=cfg.rpg?"jornada":skin();
   if(document.documentElement.dataset.skin!==k){document.documentElement.dataset.skin=k;
-    const m=document.querySelector('meta[name="theme-color"]'); if(m) m.content = k==="neon"?"#05010f":"#E4007C";}
+    const m=document.querySelector('meta[name="theme-color"]'); if(m) m.content = k==="neon"?"#05010f":k==="jornada"?"#0a0b1a":"#E4007C";
+    navIcons(k==="jornada");}
   if(k==="neon" && !rainOn){rainOn=true;resize();if(!reduce)requestAnimationFrame(tick);else drawStatic()}
   if(k!=="neon") rainOn=false;
+}
+// Iconos de la barra: dibujados en pixel art con el aspecto «La jornada»
+var PX_ICONS={hoy:["..ooooo..",".o.....o.","o...x...o","o...x...o","o...xxx.o","o.......o","o.......o",".o.....o.","..ooooo.."],
+  mes:["ooooooooo","oxxxxxxxo","ooooooooo","o.o.o.o.o","ooooooooo","o.o.o.x.o","ooooooooo","o.o.o.o.o","ooooooooo"],
+  nomina:["ooooooooo","oo.....oo","o.o...o.o","o..o.o..o","o...x...o","o.......o","o.......o","ooooooooo","........."],
+  rpg:["........o",".......oo","......oo.",".....oo..","x...oo...",".x.oo....","..xo.....",".x.x.....","x...x...."],
+  ajustes:["...ooo...",".o.ooo.o.","..ooooo..","oooo.oooo","ooo...ooo","oooo.oooo","..ooooo..",".o.ooo.o.","...ooo..."]};
+function navIcons(px){
+  document.querySelectorAll("nav.tabs button").forEach(b=>{
+    const svg=b.querySelector("svg"); if(!svg) return;
+    if(!b.dataset.svg) b.dataset.svg=svg.innerHTML+"|"+svg.getAttribute("viewBox");
+    const m=PX_ICONS[b.dataset.tab];
+    if(px&&m){let h="";m.forEach((row,y)=>[...row].forEach((ch,x)=>{if(ch!==".")h+=`<rect x="${x}" y="${y}" width="1" height="1"${ch==="x"?' class="acc"':""}/>`}));
+      svg.setAttribute("viewBox","0 0 9 9");svg.setAttribute("shape-rendering","crispEdges");svg.innerHTML=h;svg.classList.add("px")}
+    else{const [inner,vb]=b.dataset.svg.split("|");svg.innerHTML=inner;svg.setAttribute("viewBox",vb);svg.removeAttribute("shape-rendering");svg.classList.remove("px")}
+  });
 }
 function resize(){
   DPR=Math.min(2,window.devicePixelRatio||1); W=innerWidth; H=innerHeight;
@@ -1248,13 +1276,14 @@ function xpBar(R){const pct=Math.max(0,Math.min(100,(R.xp-R.from)/(R.to-R.from)*
 function bossBar(b){const pct=b.max?b.hp/b.max*100:0;return `<div class="hpbar" role="img" aria-label="Vida del jefe: ${b.hp} de ${b.max}"><i style="width:${pct}%"></i></div>`}
 // barra por segmentos, estilo videojuego
 function segBar(v,max,cls,n){n=n||12;const on=max?Math.round(v/max*n):0;let h="";for(let i=0;i<n;i++)h+=`<i class="${i<on?"on":""}" style="--i:${i}"></i>`;return `<div class="gbar ${cls}" role="img" aria-label="${v} de ${max}">${h}</div>`}
-var coinIco=`<i class="coin" aria-hidden="true"></i>`;
+function coinI(){return `<i class="coin" aria-hidden="true"></i>`}
+function hoyTip(){const q=quickState(),l=pacoLines(q,quickInfo(q),rpg())[0];return pacoTip(l.text,l.who,l.exp)}
 function rpgMini(){
   const R=rpg(), b=R.boss;
   return `<button class="rpgmini" data-tab="rpg" aria-label="Ver tu personaje">
     <canvas class="ava" width="48" height="48" aria-hidden="true"></canvas>
     <div class="rm-in">
-      <div class="rm-top"><b>NV ${R.L}</b><span>${R.rank.name}</span><em class="num">${coinIco}${R.coins}</em></div>
+      <div class="rm-top"><b>NV ${R.L}</b><span>${R.rank.name}</span><em class="num">${coinI()}${R.coins}</em></div>
       ${xpBar(R)}
       ${b&&b.max?`<div class="rm-boss"><span>${b.name}</span>${bossBar(b)}</div>`:""}
     </div></button>`;
@@ -1263,13 +1292,13 @@ var avaTimer=null, avaFrame=0;
 function paintAvatars(){
   if(!cfg.rpg) return;
   const R=rpg(), look=rpgLook(R), inv=rpgInv();
-  const lookFor=c=>{const id=c.dataset.prev;if(!id)return look;const it=MTRPG.SHOP.find(x=>x.id===id);const v=clone(inv);v.equip[it.slot]=it.id;return MTRPG.lookOf(R.rank.tier,v)};
+  const lookFor=c=>{const id=c.dataset.prev;if(!id)return nightLook(inv.equip);const it=MTRPG.SHOP.find(x=>x.id===id);const eq=Object.assign({},inv.equip);eq[it.slot]=it.id;return nightLook(eq)};
   const list=[...document.querySelectorAll("canvas.ava")].filter(c=>c.offsetParent);
-  list.forEach(c=>MTScene.paint(c,lookFor(c),avaFrame));
+  list.forEach(c=>MTNight.paint(c,lookFor(c),avaFrame));
   clearInterval(avaTimer);
   if(list.length && !reduce) avaTimer=setInterval(()=>{
     if(document.hidden) return; avaFrame^=1;
-    document.querySelectorAll("canvas.ava").forEach(c=>{if(c.offsetParent)MTScene.paint(c,lookFor(c),avaFrame)});
+    document.querySelectorAll("canvas.ava").forEach(c=>{if(c.offsetParent)MTNight.paint(c,lookFor(c),avaFrame)});
   },650);
 }
 // Lo que dice el jefe según cómo va tu día
@@ -1290,7 +1319,7 @@ function mountScenes(){
       return {look:rpgLook(R),boss:R.boss,rain:R.event.id==="lluvia"||((h>=21||h<6)&&d%3===0),taunts:taunts()}},cv.dataset.mode)});
   });
 }
-function activeScene(){if(nightScene&&!$("quick").hidden)return nightScene;const s=scenes.find(x=>x.cv.isConnected&&x.cv.offsetParent);return s?s.sc:null}
+function activeScene(){if(nightScene&&!$("quick").hidden)return nightScene;if(heroScene&&heroScene.cv&&heroScene.cv.offsetParent)return heroScene;const s=scenes.find(x=>x.cv.isConnected&&x.cv.offsetParent);return s?s.sc:null}
 // Tras cambiar un día: animación en la escena visible (golpe, crítico, experiencia, monedas, nivel)
 function rpgFx(b4){
   if(!cfg.rpg||!b4) return;
@@ -1322,14 +1351,14 @@ function heroPanel(R){
   if(heroTab==="tienda"){
     const items=MTRPG.SHOP.filter(i=>i.slot===shopSlot);
     return `<div class="gpanel">
-      <div class="shop-head"><span>Tienes</span><b class="num">${coinIco}${R.coins}</b>${R.event.shop?`<em>Hoy −20 %</em>`:""}</div>
+      <div class="shop-head"><span>Tienes</span><b class="num">${coinI()}${R.coins}</b>${R.event.shop?`<em>Hoy −20 %</em>`:""}</div>
       <div class="chips shop-slots" role="tablist">${Object.entries(MTRPG.SLOTS).map(([k,v])=>`<button class="chip" data-slot="${k}" aria-pressed="${k===shopSlot}">${v}</button>`).join("")}</div>
       <div class="shgrid">${items.map((it,i)=>{
         const own=inv.owned.some(o=>o.id===it.id), eq=inv.equip[it.slot]===it.id, pr=MTRPG.price(it,R.event), lock=R.L<it.minL;
         const act = eq?`<button class="chip" data-unequip="${it.slot}" aria-pressed="true">Puesto</button>`
           : own?`<button class="chip" data-equip="${it.id}">Ponerse</button>`
           : lock?`<span class="shlock">Nivel ${it.minL}</span>`
-          : `<button class="chip buy" data-buy="${it.id}" ${R.coins<pr?"disabled":""}>${coinIco}${pr}${pr<it.price?` <s>${it.price}</s>`:""}</button>`;
+          : `<button class="chip buy" data-buy="${it.id}" ${R.coins<pr?"disabled":""}>${coinI()}${pr}${pr<it.price?` <s>${it.price}</s>`:""}</button>`;
         return `<div class="shitem${eq?" on":""}${lock?" lock":""}" style="--i:${i}"><canvas class="ava prev" width="64" height="64" data-prev="${it.id}" aria-hidden="true"></canvas><b>${it.name}</b>${act}</div>`}).join("")}</div>
       <p class="hint">Las monedas se ganan fichando, descansando, con misiones y derrotando jefes. Todo es estético.</p></div>`;
   }
@@ -1362,18 +1391,22 @@ function heroPanel(R){
 }
 function renderRPG(){
   const R=rpg(), sound=cfg.rpgSound!==false, v=$("v-rpg");
-  if(!v.querySelector("canvas.scene")){
+  if(!$("hg-scene")){
     v.innerHTML=`<div class="hg">
-      <div class="hg-stage"><canvas class="scene" data-mode="band" role="img" aria-label="Tu personaje frente al jefe del periodo"></canvas><div class="hg-hud" id="hg-hud"></div></div>
+      <div class="hg-stage"><canvas class="nscene" id="hg-scene" role="img" aria-label="La puerta de tu trabajo con tu personaje, Paco y Mancha"></canvas><div class="hg-hud" id="hg-hud"></div></div>
       <div class="hg-tabs" role="tablist" id="hg-tabs"></div>
       <div class="hg-panel" id="hg-panel"></div></div>`;
-    mountScenes();
+  }
+  { const q=quickState(); heroState=nightOf(q,R); }
+  if(!heroScene||!$("hg-scene")||heroScene.cv!==$("hg-scene")){
+    if(heroScene) heroScene.destroy();
+    const c=$("hg-scene"); MTNight.setSound(cfg.rpgSound!==false);
+    heroScene=MTNight.mount(c,()=>heroState); heroScene.cv=c;
   }
   const b=R.boss;
   $("hg-hud").innerHTML=`<div class="hh-l"><b>NV ${R.L}</b><span>${R.rank.name}</span></div>
-    <div class="hh-r"><em class="num">${coinIco}${R.coins}</em><button class="gbtn" id="r-snd" aria-pressed="${sound}" aria-label="Sonido">${sound?"♪":"✕"}</button></div>
-    ${segBar(R.xp-R.from,R.to-R.from,"xp",16)}
-    ${b&&b.max?`<div class="hh-boss"><span>${b.name}</span>${segBar(b.hp,b.max,"hp",12)}</div>`:""}`;
+    <div class="hh-r"><em class="num">${coinI()}${R.coins}</em><button class="gbtn" id="r-snd" aria-pressed="${sound}" aria-label="Sonido">${sound?"♪":"✕"}</button></div>
+    ${segBar(R.xp-R.from,R.to-R.from,"xp",16)}`;
   $("hg-tabs").innerHTML=HERO_TABS.map(([k,l])=>`<button role="tab" data-ht="${k}" aria-selected="${k===heroTab}">${l}</button>`).join("");
   const pnl=$("hg-panel"), changed=pnl.dataset.t!==heroTab;
   pnl.innerHTML=heroPanel(R); pnl.dataset.t=heroTab;
@@ -1470,19 +1503,22 @@ function openActions(){
 }
 var typer=null, lastLine="";
 /* ---------- «La jornada»: escena de la puerta del trabajo (js/noche.js) ---------- */
-var nightScene=null, nightState=null, nightLines=[], nightIdx=0;
+var nightScene=null, nightState=null, nightLines=[], nightIdx=0, heroScene=null, heroState=null;
 // Lo que necesita la escena: si te espera fuera, estás dentro o ya te fuiste; lluvia; tu equipo
 function nightOf(q,R){
   const mode=q.mode==="out"||q.mode==="outn"?"work":q.mode==="done"?"done":q.mode==="tipo"||q.p.rest?"off":"in";
-  const h=new Date().getHours(), d=new Date().getDate(), eq=rpgInv().equip, it=id=>MTRPG.SHOP.find(x=>x.id===id)||{};
-  const look={};
+  const h=new Date().getHours(), d=new Date().getDate();
+  return {mode, ficha:nowHM(), rain:R.event.id==="lluvia"||((h>=21||h<6)&&d%3===0), look:nightLook(rpgInv().equip)};
+}
+function nightLook(eq){
+  const it=id=>MTRPG.SHOP.find(x=>x.id===id)||{}, look={};
   if(eq.H){look.hat=it(eq.H).c;look.hat2=it(eq.H).c2}
   if(eq.B){look.coat=it(eq.B).c;look.coat2=it(eq.B).c2}
   if(eq.C){look.scarf=it(eq.C).c;look.scarf2=it(eq.C).c}
   if(eq.V) look.visor=it(eq.V).c;
   if(eq.P==="p-dron") look.drone=it(eq.P).c;
   if(eq.P==="p-gato") look.cat="#c8783a";
-  return {mode, ficha:nowHM(), rain:R.event.id==="lluvia"||((h>=21||h<6)&&d%3===0), look};
+  return look;
 }
 function mountNight(){
   const cv=$("q-scene"); if(!cv||nightScene) return;
@@ -1546,7 +1582,7 @@ function renderQuick(){
     nightState=nightOf(q,R);
     $("n-hud").innerHTML=`
       <div><div class="n-time num">${now}</div><div class="n-shift">${q.mode==="tipo"?TIPOS[q.r.tipo]:q.p.rest?"Hoy libras":q.p.fest?"Festivo":`Turno de ${q.p.name.toLowerCase()}, de ${q.p.e} a ${q.p.s}`}</div></div>
-      <div class="n-lv"><div>Nivel <b>${R.L}</b></div>${segBar(R.xp-R.from,R.to-R.from,"xp",10)}<span class="num">${coinIco}${R.coins}</span></div>`;
+      <div class="n-lv"><div>Nivel <b>${R.L}</b></div>${segBar(R.xp-R.from,R.to-R.from,"xp",10)}<span class="num">${coinI()}${R.coins}</span></div>`;
     const main = I.btn?`<button class="n-go" id="q-punch">Fichar ${I.btn==="Entrada"?"entrada":"salida"}<b class="num">${now}</b></button>`
       : `<button class="n-go done" id="q-edit">${q.mode==="done"?"Turno hecho":TIPOS[q.r.tipo]}<b>Editar</b></button>`;
     $("g-ui").innerHTML=`

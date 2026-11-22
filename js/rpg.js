@@ -15,10 +15,10 @@ const CR={dia:5, puntual:2, descanso:1, semana:10, jefe:30, logro:10};
 
 /* Jefes: uno por periodo de liquidación. kind elige el dibujo de la escena. */
 const BOSSES=[
-  {name:"Lunes Eterno",kind:0,c:"#7c5cff"},{name:"Titán del Reloj",kind:2,c:"#ffb020"},{name:"Gólem del Papeleo",kind:3,c:"#d9d2c0"},
-  {name:"Robo-Supervisor",kind:1,c:"#22c7e6"},{name:"Hidra de las Horas",kind:0,c:"#1fbf8f"},{name:"Reloj de Arena Maldito",kind:2,c:"#ff6b3d"},
-  {name:"Torre de Expedientes",kind:3,c:"#b9c3d6"},{name:"Mecha Encargado",kind:1,c:"#ff3bd6"},{name:"Babosa del Atasco",kind:0,c:"#9ad13b"},
-  {name:"Cronómetro Implacable",kind:2,c:"#e5484d"},{name:"Archivador Viviente",kind:3,c:"#e8c07a"},{name:"Androide de Recursos Humanos",kind:1,c:"#8b93a8"}];
+  {name:"El Lunes Eterno",kind:0,c:"#7c5cff"},{name:"El Reloj que Atrasa",kind:2,c:"#ffb020"},{name:"La Montaña de Papeles",kind:3,c:"#d9d2c0"},
+  {name:"El Encargado de Turno",kind:1,c:"#22c7e6"},{name:"La Semana de Seis Días",kind:0,c:"#1fbf8f"},{name:"El Cierre de Mes",kind:2,c:"#ff6b3d"},
+  {name:"La Torre de Albaranes",kind:3,c:"#b9c3d6"},{name:"La Reunión de las Ocho",kind:1,c:"#ff3bd6"},{name:"El Atasco de la Rotonda",kind:0,c:"#9ad13b"},
+  {name:"El Inventario",kind:2,c:"#e5484d"},{name:"El Archivador sin Fondo",kind:3,c:"#e8c07a"},{name:"Recursos Humanos",kind:1,c:"#8b93a8"}];
 function bossOf(endDate){return BOSSES[(endDate.getFullYear()*12+endDate.getMonth())%BOSSES.length]}
 
 /* Evento del día: sale de la fecha (siempre el mismo para el mismo día) y cambia algo pequeño. */
@@ -35,21 +35,21 @@ function eventOf(s){let h=7;for(const ch of s)h=(h*31+ch.charCodeAt(0))>>>0;retu
 
 /* Tienda: solo estética. slot H casco, V visor, B traje, C capa, P mascota. */
 const SHOP=[
-  {id:"h-cromo",slot:"H",name:"Casco cromado",price:40,minL:1,c:"#c9d1e0",c2:"#8a93a6"},
-  {id:"h-rojo", slot:"H",name:"Casco rojo",price:60,minL:3,c:"#e5484d",c2:"#9c2a2e"},
-  {id:"h-jade", slot:"H",name:"Casco jade",price:80,minL:5,c:"#1fbf8f",c2:"#11805e"},
-  {id:"h-oro",  slot:"H",name:"Casco dorado",price:220,minL:10,c:"#f2b134",c2:"#b97a12"},
-  {id:"v-ambar",slot:"V",name:"Visor ámbar",price:30,minL:1,c:"#ffb020"},
-  {id:"v-verde",slot:"V",name:"Visor verde",price:30,minL:2,c:"#3dffb0"},
-  {id:"v-rojo", slot:"V",name:"Visor rojo",price:50,minL:4,c:"#ff3b6b"},
+  {id:"h-cromo",slot:"H",name:"Gorro gris",price:40,minL:1,c:"#c9d1e0",c2:"#8a93a6"},
+  {id:"h-rojo", slot:"H",name:"Gorro rojo",price:60,minL:3,c:"#e5484d",c2:"#9c2a2e"},
+  {id:"h-jade", slot:"H",name:"Gorro verde",price:80,minL:5,c:"#1fbf8f",c2:"#11805e"},
+  {id:"h-oro",  slot:"H",name:"Gorro dorado",price:220,minL:10,c:"#f2b134",c2:"#b97a12"},
+  {id:"v-ambar",slot:"V",name:"Gafas ámbar",price:30,minL:1,c:"#ffb020"},
+  {id:"v-verde",slot:"V",name:"Gafas verdes",price:30,minL:2,c:"#3dffb0"},
+  {id:"v-rojo", slot:"V",name:"Gafas rojas",price:50,minL:4,c:"#ff3b6b"},
   {id:"b-obra", slot:"B",name:"Mono naranja",price:50,minL:2,c:"#e8772e",c2:"#a84f17"},
-  {id:"b-negro",slot:"B",name:"Traje negro",price:90,minL:6,c:"#22222e",c2:"#14141c"},
-  {id:"b-neon", slot:"B",name:"Chaqueta de neón",price:140,minL:8,c:"#7a2cff",c2:"#4a17a8"},
-  {id:"c-roja", slot:"C",name:"Capa carmesí",price:120,minL:5,c:"#c21f4a"},
-  {id:"c-noche",slot:"C",name:"Capa nocturna",price:120,minL:5,c:"#1d2a6b"},
-  {id:"p-dron", slot:"P",name:"Dron K-9",price:160,minL:4,c:"#22c7e6"},
+  {id:"b-negro",slot:"B",name:"Chaqueta negra",price:90,minL:6,c:"#22222e",c2:"#14141c"},
+  {id:"b-neon", slot:"B",name:"Chaqueta morada",price:140,minL:8,c:"#7a2cff",c2:"#4a17a8"},
+  {id:"c-roja", slot:"C",name:"Bufanda carmesí",price:120,minL:5,c:"#c21f4a"},
+  {id:"c-noche",slot:"C",name:"Bufanda azul noche",price:120,minL:5,c:"#1d2a6b"},
+  {id:"p-dron", slot:"P",name:"Dron de reparto",price:160,minL:4,c:"#22c7e6"},
   {id:"p-gato", slot:"P",name:"Gato callejero",price:100,minL:2,c:"#f2a65a"}];
-const SLOTS={H:"Casco",V:"Visor",B:"Traje",C:"Capa",P:"Mascota"};
+const SLOTS={H:"Gorro",V:"Gafas",B:"Chaqueta",C:"Bufanda",P:"Compañero"};
 
 // A: {months, calc, periodOf, parse, iso, addDays, today, lastBackup, audits, inv}
 function compute(A){

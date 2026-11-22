@@ -769,7 +769,7 @@ details.gpanel[open] summary{margin-bottom:10px}
 /* =====================================================================
    v4 · «La jornada»: pantalla de inicio del modo RPG (js/noche.js)
    ===================================================================== */
-:root{--pixel:"Pixelify Sans","Silkscreen",ui-monospace,monospace;--n-bg:#0a0b1a;--n-line:#e9e3cf;--n-text:#efe8d6;--n-muted:#9aa0c4;--n-amber:#ffb347}
+:root{--pixel:"Tiny5","Silkscreen",ui-monospace,monospace;--n-bg:#0a0b1a;--n-line:#e9e3cf;--n-text:#efe8d6;--n-muted:#9aa0c4;--n-amber:#ffb347}
 #quick.game{background:var(--n-bg);display:flex;flex-direction:column;overflow:hidden;color:var(--n-text);font-family:var(--pixel)}
 .n-stage{position:relative;flex:1;min-height:0}
 .nscene{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;display:block}
@@ -805,3 +805,87 @@ body.q-open:has(#quick.game) .sheet{background:#0f1024;color:var(--n-text);borde
 body.q-open:has(#quick.game) .atile{background:#05060f;border:2px solid #3b3360;border-radius:0;color:var(--n-text);font-family:var(--pixel)}
 body.q-open:has(#quick.game) .atile i{color:var(--n-amber)}
 @media (max-height:640px){.n-time{font-size:26px}.n-dlg{min-height:80px}.n-dlg p{font-size:15px}.n-go{padding:11px 12px}}
+
+/* =====================================================================
+   v5 · aspecto «La jornada» en toda la app (se activa con el modo RPG)
+   Noche, papel y ámbar de farola; paneles con marco de píxel y letra Tiny5.
+   ===================================================================== */
+:root[data-skin="jornada"]{
+  color-scheme:dark;
+  --ground:#0a0b1a; --surface:#14152c; --ink:#efe8d6; --muted:#a3a8cc; --line:#2e2d50;
+  --fucsia:#ffb347; --fucsia-ink:#1a0f05; --rosa:#2a2346; --rosa-ink:#ffd27a;
+  --manana:#e8c25a; --manana-bg:#3a2f12; --manana-ink:#ffd27a;
+  --tarde:#d0728f; --tarde-bg:#3a1e33; --tarde-ink:#ffb3c9;
+  --noche:#6f8fe0; --noche-bg:#17244a; --noche-ink:#a8c0ff;
+  --otro:#e0603f; --otro-bg:#3a1a12; --otro-ink:#ffae95;
+  --fest:#5fc9a8; --fest-bg:#0d302c; --fest-ink:#7fe3c4; --falta:#5a5a7a;
+  --hero:#05060f; --hero-ink:#efe8d6; --hero-muted:#a3a8cc;
+  --frame:#e9e3cf;
+  --shadow:0 0 0 2px #05060f,4px 4px 0 2px rgba(0,0,0,.35);
+  --display:"Tiny5","Silkscreen",ui-monospace,monospace;
+}
+[data-skin="jornada"] body{background:var(--ground) linear-gradient(#0f1127,#0a0b1a 340px) no-repeat}
+[data-skin="jornada"] #rain{display:none}
+/* esquinas rectas en todo, como en un juego de píxeles */
+[data-skin="jornada"] body *{border-radius:0!important}
+[data-skin="jornada"] .logo{background:#05060f;color:var(--fucsia);box-shadow:0 0 0 2px var(--frame);font-family:var(--display)}
+[data-skin="jornada"] .brand h1{font-family:var(--display);font-weight:700;letter-spacing:0}
+[data-skin="jornada"] .h2 h2,[data-skin="jornada"] h2,[data-skin="jornada"] h3{font-family:var(--display);letter-spacing:0}
+/* tarjetas: paneles con marco */
+[data-skin="jornada"] :is(.card,.list,.week,.tile,.bkban,.gpanel,.rpgmini){background:var(--surface);border:2px solid var(--line);box-shadow:var(--shadow)}
+[data-skin="jornada"] :is(.hero,.nres){background:#05060f;border:3px solid var(--frame);box-shadow:0 0 0 3px #05060f,6px 6px 0 3px rgba(0,0,0,.35)}
+[data-skin="jornada"] .hero::after{display:none}
+[data-skin="jornada"] :is(.hero .big,.nres .n,.vnum){font-family:var(--display);font-weight:700;letter-spacing:0}
+[data-skin="jornada"] .btn{font-family:var(--display);font-weight:700}
+[data-skin="jornada"] .btn.primary{box-shadow:0 4px 0 #a0601c}
+[data-skin="jornada"] .btn.primary:active{transform:translateY(3px);box-shadow:0 1px 0 #a0601c}
+[data-skin="jornada"] .btn.ghost{background:transparent;border:2px solid var(--frame);color:var(--ink)}
+[data-skin="jornada"] .seg{background:#05060f;border:2px solid var(--line)}
+[data-skin="jornada"] .seg button[aria-pressed="true"]{background:var(--rosa);color:var(--rosa-ink);box-shadow:none}
+[data-skin="jornada"] input,[data-skin="jornada"] select{background:#05060f;border-color:var(--line)}
+[data-skin="jornada"] .sheet{background:#0f1024;border:3px solid var(--frame);border-bottom:0}
+[data-skin="jornada"] .toast{font-family:var(--display);background:#05060f;color:var(--ink);border:2px solid var(--frame)}
+/* barra de abajo con iconos de píxel */
+[data-skin="jornada"] nav.tabs{background:#05060f;backdrop-filter:none;-webkit-backdrop-filter:none;border-top:3px solid var(--frame)}
+[data-skin="jornada"] nav.tabs button{font-family:var(--display);font-weight:500;font-size:12px;color:#8d8fb5}
+[data-skin="jornada"] nav.tabs button svg.px{width:24px;height:24px;fill:currentColor;stroke:none}
+[data-skin="jornada"] nav.tabs button svg.px .acc{fill:#e8c25a}
+[data-skin="jornada"] nav.tabs button[aria-current="page"]{color:var(--fucsia);background:transparent}
+[data-skin="jornada"] nav.tabs button[aria-current="page"] svg.px .acc{fill:#c0504d}
+/* el personaje en las fichas */
+[data-skin="jornada"] canvas.ava{image-rendering:pixelated;background:#1a1c3a}
+/* Paco comenta */
+.paco-tip{display:grid;grid-template-columns:44px 1fr;gap:10px;align-items:start;background:#05060f;border:3px solid var(--frame,#e9e3cf);box-shadow:0 0 0 3px #05060f;padding:9px;margin:12px 0;color:#efe8d6}
+.paco-tip canvas{width:44px;height:44px;image-rendering:pixelated;background:#2a2346}
+.paco-tip p{margin:0;font:400 15px/1.35 var(--pixel)}
+.paco-tip small{display:block;color:#ffb347;font-size:13px;margin-bottom:2px}
+/* el sobre de la nómina */
+.nres canvas.sobre{display:block;width:144px;height:90px;image-rendering:pixelated;margin:0 auto 10px;animation:pop .5s cubic-bezier(.2,.8,.2,1) both}
+/* Héroe con la escena de la puerta */
+.hg-stage canvas.nscene{position:static;display:block;width:100%;height:auto;aspect-ratio:10/8}
+[data-skin="jornada"] .hg-stage{border:3px solid var(--frame);box-shadow:0 0 0 3px #05060f}
+[data-skin="jornada"] .hg-tabs button{background:#05060f;color:var(--muted);border:2px solid var(--line);font-family:var(--display);font-size:13px;text-transform:none}
+[data-skin="jornada"] .hg-tabs button[aria-selected="true"]{background:var(--fucsia);color:#1a0f05;border-color:var(--fucsia);transform:none}
+[data-skin="jornada"] .gpanel h3{font-family:var(--display);font-size:15px;text-transform:none}
+[data-skin="jornada"] .gpanel .gbar{box-shadow:0 0 0 2px var(--frame);background:#05060f}
+[data-skin="jornada"] .gbar.xp i.on{background:#7fe3c4}
+[data-skin="jornada"] .gbar.hp i.on{background:#d0728f}
+[data-skin="jornada"] .gbar.at i.on{background:#e8c25a}
+[data-skin="jornada"] .gbar.en i.on{background:#5fc9a8}
+[data-skin="jornada"] .gpanel.evt{background:#1b1630;border-color:#5a4a2a}
+[data-skin="jornada"] .gpanel.evt small{color:var(--fucsia)}
+[data-skin="jornada"] .f-lv b{color:var(--fucsia)}
+[data-skin="jornada"] .ficha canvas{background:#1a1c3a}
+[data-skin="jornada"] .shitem canvas.prev{background:#1a1c3a}
+[data-skin="jornada"] .shitem.on{box-shadow:0 0 0 2px var(--fucsia)}
+[data-skin="jornada"] .hh-l b{color:var(--fucsia)}
+[data-skin="jornada"] .hg-hud{font-family:var(--display)}
+/* La letra de píxel no trae un € legible: ese signo sale de la letra del sistema */
+@font-face{font-family:"EuroFix";src:local("Helvetica Neue"),local("Helvetica"),local("Roboto"),local("Arial");unicode-range:U+20AC}
+:root{--pixel:"EuroFix","Tiny5","Silkscreen",ui-monospace,monospace}
+:root[data-skin="jornada"]{--display:"EuroFix","Tiny5","Silkscreen",ui-monospace,monospace}
+/* Cifras grandes: misma letra de píxel, sin negrita sintética */
+:root{--pixnum:"EuroFix","Tiny5","Silkscreen",ui-monospace,monospace}
+.n-time,.n-go b,[data-skin="jornada"] :is(.hero .big,.nres .n,.vnum,.f-lv b,.shop-head b,.n-lv b){font-family:var(--pixnum);font-weight:400;letter-spacing:-.02em}
+[data-skin="jornada"] .hero .big{font-size:clamp(30px,10vw,44px)}
+.n-time{font-size:30px}
