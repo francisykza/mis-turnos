@@ -32,7 +32,7 @@
 <canvas id="rain" aria-hidden="true"></canvas><div id="flash" aria-hidden="true"></div>
 <div class="wrap">
   <header class="top">
-    <div class="brand"><div class="logo" aria-hidden="true">h</div><div><h1>Mis Turnos</h1><small>Horas, extras y festivos</small></div></div>
+    <div class="brand"><button class="logo" id="go-home" aria-label="Pantalla de inicio">h</button><div><h1>Mis Turnos</h1><small>Horas, extras y festivos</small></div></div>
     <div class="sync" id="sync"><i></i><span>En este móvil</span></div>
   </header>
 
@@ -61,6 +61,7 @@
 
 <script src="js/festivos.js"></script>
 <script src="js/rpg.js"></script>
+<script src="js/escena.js"></script>
 <script src="js/app.js"></script>
 <script>if("serviceWorker" in navigator){addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}))}</script>
 </body>

@@ -21,7 +21,7 @@ Una app que vive en la pantalla de inicio del móvil y permite fichar en un toqu
 ## Funcionalidades
 
 - **Fichaje rápido:** entrada y salida con la hora actual, o "turno completo" en un toque. Cada fichaje se puede deshacer durante 5 segundos.
-- **Pantalla de fichaje:** opcionalmente la app se abre en una pantalla con la hora, el turno de hoy, un botón grande para fichar y botones de +30 min y +1 h de extra.
+- **Pantalla de inicio:** al abrir la app, la hora, el turno de hoy y un botón grande para fichar; botones para apuntar extras (+30 min, +1 h u otra cantidad), turno completo, festivo, vacaciones o baja; y el cambio entre modo normal y modo RPG. Desde la app se vuelve tocando el logo.
 - **Turnos configurables:** un asistente con plantillas (mañana y tarde alternas, mañana-tarde-noche, horario fijo, días seguidos de trabajo y descanso) o un ciclo dibujado día a día, de hasta 6 semanas y 4 turnos. Admite turnos de noche que cruzan la medianoche. Si cambias de turnos «desde hoy», los periodos pasados no se recalculan.
 - **Contador de horas extra** del periodo de liquidación (configurable, por defecto del 20 al 19).
 - **Calculadora de extras:** "si entro a las 5:20, ¿cuántas extras me supone?"
@@ -32,7 +32,7 @@ Una app que vive en la pantalla de inicio del móvil y permite fichar en un toqu
 - **¿Te han pagado bien?:** apuntas el neto cobrado y las horas extra y festivas que pone tu nómina, y la app las compara con lo fichado: dice si cuadra o cuántas horas (y euros brutos aproximados) faltan.
 - **Informe para reclamar:** registro de jornada del periodo, día a día, con totales, horas pendientes de pago, criterios de cálculo y espacio para firmar. Se imprime o se guarda como PDF desde el móvil, o se comparte como texto.
 - **Copia de seguridad:** se guarda con el menú Compartir del móvil (Archivos, Drive, correo…) y la app avisa en Hoy si hay cambios sin copia desde hace 14 días. Recuperar una copia pide confirmación.
-- **Modo RPG (opcional):** un personaje en pixel art que sube de nivel y de rango (Recluta, Operador, Veterano, Leyenda) cuando fichas con constancia; un jefe por cada periodo de liquidación que cae si fichas todos los días de trabajo; rachas, estadísticas y 15 logros. Todo se calcula a partir de los fichajes, sin datos aparte, y las horas extra no dan más experiencia: se premia la constancia, no echar más horas.
+- **Modo RPG (opcional):** un pequeño RPG del mundo laboral. Una escena pixel art de la ciudad que cambia con la hora real, con tu personaje frente al jefe del periodo (babosas, robots, relojes y gólems de papeleo): al fichar, el personaje ataca y el jefe pierde vida. Niveles y rangos, monedas, tienda de equipo (cascos, visores, trajes, capas y mascotas), misiones del día y de la semana, un evento diario que cambia las reglas, atributos y energía (avisa si encadenas muchos días sin descanso), diario de batalla y 15 logros. Todo se calcula a partir de los fichajes, y las horas extra no dan experiencia: se premia la constancia, no echar más horas. Efectos de sonido opcionales.
 - **Funciona sin conexión** y se instala como una app nativa.
 - **Dos aspectos visuales:** "Neón", con lluvia animada en canvas, y "Clásico".
 
