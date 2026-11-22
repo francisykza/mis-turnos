@@ -573,9 +573,11 @@ function renderNomina(){
         <tr class="tot"><td>Neto</td><td>${eur(E.neto)}</td></tr>
       </table>
       <p class="disc">Estimación orientativa. Tu convenio puede pagar festivos, extras o bajas de otra forma; compárala con tu nómina real y ajusta los datos.</p>
-    </div>`:`
+    </div>
+    ${renderCuadra(per,E)}`:`
     <div class="nres"><small>Estimación de nómina</small><div class="n" style="font-size:26px;line-height:1.2">Rellena tus datos de nómina abajo</div><div class="b">Con tu salario base ya puedo calcular. El resto de campos afinan la cifra. Después podrás simular cuánto cobrarías echando más horas.</div></div>`}
     ${simOn?`<p class="note">Los precios de la hora salen de tus datos de nómina (en «Mi estimación»).</p>`:`
+    <button class="btn line" id="n-report" style="width:100%;margin-top:12px">Informe para reclamar</button>
     <div class="card">
       <h3>Datos de tu nómina</h3>
       <p class="hint">Cópialos de una nómina reciente. Solo se guardan en tu cuenta.</p>
@@ -599,11 +601,153 @@ function renderNomina(){
   $("n-next").onclick=()=>{nomYM=periodOf(addDays(parse(per.end),1)).start;renderNomina()};
   if(ready){$("nm-est").onclick=()=>{nomMode="est";renderNomina()};$("nm-sim").onclick=()=>{nomMode="sim";renderNomina()}}
   if(simOn){bindSim();return}
+  $("n-report").onclick=()=>openReport(per);
+  if(ready) bindCuadra(per);
   const keys={"n-base":"base","n-comp":"comp","n-pagas":"pagas","n-irpf":"irpf","n-ss":"ss","n-hora":"hora","n-anual":"anual","n-recX":"recX","n-recF":"recF"};
   Object.entries(keys).forEach(([id,k])=>$(id).addEventListener("change",e=>{cfg.nomina=Object.assign(nomData(),{[k]:e.target.value===""?0:Number(String(e.target.value).replace(",","."))});persistCfg();renderNomina();toast("Guardado")}));
   $("n-prorr").onchange=e=>{cfg.nomina=Object.assign(nomData(),{prorr:e.target.value==="1"});persistCfg();renderNomina()};
   $("n-it").onchange=e=>{cfg.nomina=Object.assign(nomData(),{it:e.target.value});persistCfg();renderNomina()};
 }
+
+/* ---------- ¿te han pagado bien? (nómina real frente a lo fichado) ---------- */
+// cfg.reales[inicio del periodo] = {neto, hx, hf}: neto cobrado (€) y horas extra/festivas pagadas (h)
+const escH = s => String(s==null?"":s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const numIn = v => {v=String(v==null?"":v).trim().replace(",",".");if(v==="")return null;const n=Number(v);return isFinite(n)&&n>=0?n:null};
+const hNum = h => (Math.round(h*100)/100).toLocaleString("es-ES");
+function realOf(per){return (cfg.reales||{})[per.start]||{}}
+function cuadra(per,E){
+  const R=realOf(per), o={R, has:false, warn:false, faltaE:0};
+  if(R.neto!=null){o.has=true; o.dNeto=R.neto-E.neto}
+  if(R.hx!=null){o.has=true; o.fx=Math.round(E.t.extra-R.hx*60); o.fxE=o.fx/60*E.hx}
+  if(R.hf!=null){o.has=true; o.ff=Math.round(E.t.festH-R.hf*60); o.ffE=o.ff/60*E.hf}
+  if(o.fx>=15) o.faltaE+=o.fxE;
+  if(o.ff>=15) o.faltaE+=o.ffE;
+  o.warn = o.faltaE>0 || (o.dNeto!=null && o.dNeto<-5);
+  return o;
+}
+function hoursLine(label,fich,pag,diff,eurDiff,precio){
+  if(pag==null) return "";
+  const ok=Math.abs(diff)<15;
+  const v = ok ? "Cuadra" : diff>0 ? `Faltan ${fmt(diff)}` : `${fmt(-diff)} de más`;
+  return `<tr><td>${label}<small>fichadas ${fmt(fich)} · pagadas ${hNum(pag)} h${!ok&&diff>0?` · ≈ ${eur(eurDiff)} brutos a ${eur(precio)}/h`:""}</small></td><td class="${!ok&&diff>0?"bad":""}">${v}</td></tr>`;
+}
+function renderCuadra(per,E){
+  const C=cuadra(per,E), R=C.R;
+  const f=(id,label,val,ph)=>`<label class="f">${label}<input type="text" id="${id}" inputmode="decimal" value="${val!=null?String(val).replace(".",","):""}" placeholder="${ph}"></label>`;
+  let verdict="";
+  if(C.has){
+    if(C.faltaE>0) verdict=`<div class="cq warn"><b>Te podrían faltar ≈ ${eur(C.faltaE)} brutos</b><span>Hay horas fichadas que no aparecen pagadas. El informe del periodo sirve para reclamarlas.</span></div>`;
+    else if(C.dNeto!=null && C.dNeto<-5) verdict=`<div class="cq warn"><b>Has cobrado ${eur(-C.dNeto)} menos de lo estimado</b><span>Revisa que tus datos de nómina estén bien (IRPF, complementos). Si lo están, pregunta en tu empresa o ETT.</span></div>`;
+    else verdict=`<div class="cq ok"><b>Cuadra</b><span>Lo que te han pagado coincide con lo que has fichado.</span></div>`;
+  }
+  return `<div class="card" id="cuadra">
+      <h3>¿Te han pagado bien?</h3>
+      <p class="hint">Cuando te llegue la nómina de este periodo, apunta lo que pone y lo comparo con lo que has fichado.</p>
+      <div class="grid3">${f("r-neto","Neto cobrado €",R.neto,"0,00")}${f("r-hx","Extras pagadas h",R.hx,"0")}${f("r-hf","Festivas pagadas h",R.hf,"0")}</div>
+      ${C.has?`<table class="ntable num" style="margin-top:12px">
+        ${hoursLine("Horas extra",E.t.extra,R.hx,C.fx,C.fxE,E.hx)}
+        ${hoursLine("Horas festivas",E.t.festH,R.hf,C.ff,C.ffE,E.hf)}
+        ${R.neto!=null?`<tr><td>Neto<small>estimado ${eur(E.neto)} · cobrado ${eur(R.neto)}</small></td><td class="${C.dNeto<-5?"bad":""}">${Math.abs(C.dNeto)<=5?"Cuadra":(C.dNeto>0?"+":"−")+eur(Math.abs(C.dNeto))}</td></tr>`:""}
+      </table>${verdict}`:""}
+    </div>`;
+}
+function bindCuadra(per){
+  const save=(k,v)=>{
+    const all=Object.assign({},cfg.reales||{}), cur=Object.assign({},all[per.start]||{});
+    if(v==null) delete cur[k]; else cur[k]=v;
+    if(Object.keys(cur).length) all[per.start]=cur; else delete all[per.start];
+    cfg.reales=all; persistCfg(); renderNomina(); toast("Guardado");
+  };
+  [["r-neto","neto"],["r-hx","hx"],["r-hf","hf"]].forEach(([id,k])=>$(id).addEventListener("change",e=>save(k,numIn(e.target.value))));
+}
+
+/* ---------- informe del periodo (imprimible / PDF) ---------- */
+let reportPer=null;
+function reportData(per){
+  const t=todayISO(), end=per.end<t?per.end:t, rows=[];
+  for(let d=parse(per.start); iso(d)<=end; d=addDays(d,1)){
+    const s=iso(d), c=calc(s), p=c.p, r=c.r, fn=festName(s), notas=[];
+    let prev;
+    if(r.tipo) prev=TIPOS[r.tipo];
+    else if(p.fest) prev="Festivo"+(fn?` (${fn})`:"");
+    else if(p.rest) prev="Descanso";
+    else prev=`${p.name} ${p.e}–${p.s}`;
+    if(c.open) notas.push("sin salida fichada");
+    if(r.x) notas.push(`${fmt(r.x)} apuntadas a mano`);
+    if(c.falta) notas.push(`${fmt(c.falta)} menos que el turno`);
+    rows.push({s, d:new Date(d), prev, e:r.e||"", sa:r.s||"", c, notas, off:!!(r.tipo||p.rest||p.fest)&&!c.worked});
+  }
+  return {rows, end};
+}
+function reportText(per){
+  const {rows}=reportData(per), tot=sumRange(per.start,per.end<todayISO()?per.end:todayISO());
+  const L=[`REGISTRO DE JORNADA · del ${shortD(per.start)} al ${shortD(per.end)}`,""];
+  rows.forEach(x=>{ if(!x.c.worked && !x.c.open && x.off) return;
+    L.push(`${DOW[x.d.getDay()]} ${x.d.getDate()}/${x.d.getMonth()+1}: ${x.e||"--:--"}–${x.sa||"--:--"} · ${fmt(x.c.worked)}`+(x.c.extra?` · extra ${fmt(x.c.extra)}`:"")+(x.c.festH?` · festivas ${fmt(x.c.festH)}`:"")+(x.notas.length?` (${x.notas.join(", ")})`:""));
+  });
+  L.push("",`Trabajadas ${fmt(tot.worked)} · Extra ${fmt(tot.extra)} · Festivas ${fmt(tot.festH)}`);
+  return L.join("\n");
+}
+function openReport(per){
+  reportPer=per;
+  const I=Object.assign({nombre:"",empresa:""},cfg.informe||{});
+  const {rows,end}=reportData(per), tot=sumRange(per.start,end);
+  const E=estimate(per), ready=(Number(E.n.base)||0)>0, C=cuadra(per,E), R=C.R;
+  const today=new Date(), fdate=x=>`${x.getDate()} de ${MON[x.getMonth()]} de ${x.getFullYear()}`;
+  const blank=v=>v?escH(v):`<span class="rp-blank"></span>`;
+  const turnos=TURNO_IDS.filter(k=>cfg.ciclo.dias.includes(k)&&cfg.turnos[k]).map(k=>`${escH(shiftName(k))} ${cfg.turnos[k].e}–${cfg.turnos[k].s}`).join(" · ");
+  const ccaa=cfg.ccaa?((MTFest.CCAA.find(x=>x[0]===cfg.ccaa)||[])[1]||""):"";
+  const pend=[];
+  if(R.hx!=null && C.fx>=15) pend.push(`<tr><td>Horas extra fichadas sin pagar</td><td class="n">${fmt(C.fx)}</td><td class="n">${eur(E.hx)}/h</td><td class="n"><b>${eur(C.fxE)}</b></td></tr>`);
+  if(R.hf!=null && C.ff>=15) pend.push(`<tr><td>Horas festivas fichadas sin pagar</td><td class="n">${fmt(C.ff)}</td><td class="n">${eur(E.hf)}/h</td><td class="n"><b>${eur(C.ffE)}</b></td></tr>`);
+  $("report").innerHTML=`
+    <div class="rp-tools">
+      <div class="rp-row"><b>Informe del periodo</b><button class="btn line small" id="rp-close">Cerrar</button></div>
+      <div class="rp-row">
+        <label>Tu nombre<input id="rp-nombre" value="${escH(I.nombre)}" placeholder="Opcional" autocomplete="name"></label>
+        <label>Empresa o ETT<input id="rp-empresa" value="${escH(I.empresa)}" placeholder="Opcional" autocomplete="organization"></label>
+      </div>
+      <div class="rp-row"><button class="btn primary small" id="rp-print">Imprimir o PDF</button><button class="btn line small" id="rp-share">Compartir texto</button></div>
+      <small>Se guarda solo en este móvil. Si los dejas en blanco, el informe sale con una línea para rellenar a mano.</small>
+    </div>
+    <article class="rp-paper">
+      <h1>Registro de jornada y horas extra</h1>
+      <p class="rp-sub">Periodo de liquidación del ${fdate(parse(per.start))} al ${fdate(parse(per.end))}${end<per.end?` · fichajes hasta el ${fdate(parse(end))}`:""}</p>
+      <table class="rp-meta"><tr><td>Trabajador/a</td><td>${blank(I.nombre)}</td></tr><tr><td>Empresa</td><td>${blank(I.empresa)}</td></tr>
+        <tr><td>Turnos</td><td>${turnos||"—"}</td></tr><tr><td>Jornada</td><td>${hNum(cfg.weekly)} h semanales · periodo del día ${Number(cfg.corte)||20} al ${(Number(cfg.corte)||20)>1?(Number(cfg.corte)||20)-1:"último"} del mes siguiente</td></tr>
+        ${ccaa?`<tr><td>Festivos</td><td>Nacionales y de ${escH(ccaa)} (BOE)</td></tr>`:""}</table>
+      <h2>Detalle por días</h2>
+      <div class="rp-scroll"><table class="rp-days">
+        <thead><tr><th>Día</th><th>Previsto</th><th>Entrada</th><th>Salida</th><th>Trabajado</th><th>Extra</th><th>Festivo</th><th>Notas</th></tr></thead>
+        <tbody>${rows.map(x=>`<tr class="${x.off?"off":""}"><td>${DOW[x.d.getDay()]} ${x.d.getDate()}/${x.d.getMonth()+1}</td><td>${escH(x.prev)}</td><td class="n">${x.e}</td><td class="n">${x.sa}</td><td class="n">${x.c.worked?fmt(x.c.worked):""}</td><td class="n">${x.c.extra?fmt(x.c.extra):""}</td><td class="n">${x.c.festH?fmt(x.c.festH):""}</td><td>${x.notas.join("; ")}</td></tr>`).join("")}</tbody>
+        <tfoot><tr><td colspan="4">Total (${tot.days} días con fichaje)</td><td class="n">${fmt(tot.worked)}</td><td class="n">${fmt(tot.extra)}</td><td class="n">${fmt(tot.festH)}</td><td></td></tr></tfoot>
+      </table></div>
+      <h2>Resumen</h2>
+      <table class="rp-sum">
+        <tr><td>Horas extra fichadas</td><td class="n">${fmt(tot.extra)}</td><td>${R.hx!=null?`pagadas en nómina: ${hNum(R.hx)} h`:""}</td></tr>
+        <tr><td>Horas en festivo fichadas</td><td class="n">${fmt(tot.festH)}</td><td>${R.hf!=null?`pagadas en nómina: ${hNum(R.hf)} h`:""}</td></tr>
+        ${ready?`<tr><td>Neto estimado</td><td class="n">${eur(E.neto)}</td><td>${R.neto!=null?`cobrado: ${eur(R.neto)} (${C.dNeto>=0?"+":"−"}${eur(Math.abs(C.dNeto))})`:""}</td></tr>`:""}
+      </table>
+      ${pend.length?`<h2>Importe pendiente (estimado)</h2><table class="rp-sum"><thead><tr><th>Concepto</th><th>Horas</th><th>Precio</th><th>Importe bruto</th></tr></thead><tbody>${pend.join("")}</tbody>
+        <tfoot><tr><td colspan="3">Total</td><td class="n"><b>${eur(C.faltaE)}</b></td></tr></tfoot></table>`:""}
+      <h2>Cómo se ha calculado</h2>
+      <ul class="rp-rules">
+        <li>Día laborable: es extra el tiempo trabajado por encima del turno previsto.</li>
+        <li>Día de descanso: todo lo trabajado cuenta como extra.</li>
+        <li>Festivo: todo lo trabajado cuenta como hora festiva.</li>
+        ${ready?`<li>Precio de la hora: ordinaria ${eur(E.horaOrd)}, extra ${eur(E.hx)} (recargo ${Number(E.n.recX)||0} %), festiva ${eur(E.hf)} (recargo ${Number(E.n.recF)||0} %).</li>`:""}
+      </ul>
+      <p class="rp-foot">Registro elaborado por el propio trabajador a partir de sus fichajes diarios en la app Mis Turnos, a ${fdate(today)}. Los importes son una estimación orientativa y no sustituyen a la nómina oficial.</p>
+      <div class="rp-sign"><div>Firma del trabajador/a</div><div>Recibido por la empresa</div></div>
+    </article>`;
+  $("report").hidden=false; document.body.classList.add("rp-open"); $("report").scrollTop=0;
+  const keep=(k,el)=>el.addEventListener("change",()=>{cfg.informe=Object.assign({},cfg.informe||{},{[k]:el.value.trim()});persistCfg();openReport(per)});
+  keep("nombre",$("rp-nombre")); keep("empresa",$("rp-empresa"));
+  $("rp-close").onclick=closeReport;
+  $("rp-print").onclick=()=>window.print();
+  $("rp-share").onclick=()=>{const text=reportText(per);if(navigator.share)navigator.share({title:"Registro de jornada",text}).catch(()=>{});else{closeReport();showText(text)}};
+}
+function closeReport(){$("report").hidden=true;$("report").innerHTML="";document.body.classList.remove("rp-open");reportPer=null}
 
 function renderAjustes(){
   const yr=new Date().getFullYear(), cc=cfg.ccaa||"";
@@ -935,7 +1079,7 @@ function closeSheet(){
   setTimeout(()=>{$("scrim").hidden=true;$("sheet").hidden=true},220);
 }
 $("scrim").onclick=closeSheet;
-document.addEventListener("keydown",e=>{if(e.key==="Escape")closeSheet()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(!$("report").hidden)closeReport();else closeSheet()}});
 document.addEventListener("click",e=>{
   const ed=e.target.closest("[data-edit]"); if(ed){openEditor(ed.dataset.edit);return}
   if(e.target.closest("[data-close]")) closeSheet();
