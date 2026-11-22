@@ -32,6 +32,7 @@ Una app que vive en la pantalla de inicio del móvil y permite fichar en un toqu
 - **¿Te han pagado bien?:** apuntas el neto cobrado y las horas extra y festivas que pone tu nómina, y la app las compara con lo fichado: dice si cuadra o cuántas horas (y euros brutos aproximados) faltan.
 - **Informe para reclamar:** registro de jornada del periodo, día a día, con totales, horas pendientes de pago, criterios de cálculo y espacio para firmar. Se imprime o se guarda como PDF desde el móvil, o se comparte como texto.
 - **Copia de seguridad:** se guarda con el menú Compartir del móvil (Archivos, Drive, correo…) y la app avisa en Hoy si hay cambios sin copia desde hace 14 días. Recuperar una copia pide confirmación.
+- **Modo RPG (opcional):** un personaje en pixel art que sube de nivel y de rango (Recluta, Operador, Veterano, Leyenda) cuando fichas con constancia; un jefe por cada periodo de liquidación que cae si fichas todos los días de trabajo; rachas, estadísticas y 15 logros. Todo se calcula a partir de los fichajes, sin datos aparte, y las horas extra no dan más experiencia: se premia la constancia, no echar más horas.
 - **Funciona sin conexión** y se instala como una app nativa.
 - **Dos aspectos visuales:** "Neón", con lluvia animada en canvas, y "Clásico".
 

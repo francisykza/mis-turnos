@@ -234,7 +234,7 @@ function renderHoy(){
   const per=periodOf(d), pt=sumRange(per.start, per.end);
   const left=Math.round((parse(per.end)-parse(t))/864e5);
 
-  $("v-hoy").innerHTML=`
+  $("v-hoy").innerHTML=`${cfg.rpg?rpgMini():""}
   <div class="visor">
     <div class="vtop">
       <div><small>Horas extra del periodo</small><div class="vnum num">${fmt(pt.extra)}</div><div class="vrange num">${shortD(per.start)} – ${shortD(per.end)}</div></div>
@@ -264,6 +264,7 @@ function renderHoy(){
   <p class="note">Toca cualquier día de la semana para apuntarlo o corregirlo.</p>`;
 
   $("b-x").onclick=()=>openExtra(t);
+  paintAvatars();
   const bkn=$("bk-now"); if(bkn){bkn.onclick=exportBackup; $("bk-later").onclick=()=>{ls.set("backupSnooze",Date.now()+7*864e5);renderHoy();toast("Te lo recuerdo en una semana")}}
   const bin=$("b-in"); if(bin) bin.onclick=()=>punch(t,Object.assign({},r,{e:nowHM(),s:null}),"Entrada fichada a las "+nowHM());
   const bon=$("b-outn"); if(bon) bon.onclick=()=>punch(od,Object.assign({},rec(od),{s:nowHM()}),"Salida fichada a las "+nowHM());
@@ -801,6 +802,11 @@ function renderAjustes(){
     <h3>Aspecto</h3>
     <div class="seg"><button id="k-neon" aria-pressed="${skin()==="neon"}">Neón</button><button id="k-clasico" aria-pressed="${skin()==="clasico"}">Clásico</button></div>
   </div>
+  <div class="card">
+    <h3>Modo RPG</h3>
+    <p class="hint">Un personaje que sube de nivel cuando fichas con constancia, un jefe por cada periodo y logros. Se calcula con tus fichajes: no cambia ningún dato y lo puedes quitar cuando quieras. Las horas extra no dan más experiencia.</p>
+    <div class="seg" role="group" aria-label="Modo RPG"><button id="rpg-on" aria-pressed="${!!cfg.rpg}">Activado</button><button id="rpg-off" aria-pressed="${!cfg.rpg}">Desactivado</button></div>
+  </div>
   <p class="note">Tus datos se guardan solo en este móvil. Haz una copia de seguridad de vez en cuando.</p>
   <p class="note">Mis Turnos · creada por <b>Francisco Muñoz Dorado</b><br><a href="https://github.com/francisykza/mis-turnos" target="_blank" rel="noopener" style="color:var(--fucsia)">Código en GitHub</a> · Licencia MIT · © 2026</p>`;
   $("t-hor").onclick=()=>openWizard(2);
@@ -809,6 +815,8 @@ function renderAjustes(){
   $("bk-exp").onclick=exportBackup;
   $("bk-imp").onclick=()=>$("bk-file").click();
   $("bk-file").onchange=e=>{const f=e.target.files[0];if(f)importBackup(f);e.target.value=""};
+  $("rpg-on").onclick=()=>{if(cfg.rpg)return;cfg.rpg=true;persistCfg();const R=rpg();ls.set("rpgSeen",{L:R.L,ach:R.ach.filter(a=>a.ok).map(a=>a.id)});tab="rpg";render();window.scrollTo(0,0)};
+  $("rpg-off").onclick=()=>{cfg.rpg=false;persistCfg();render();toast("Modo RPG desactivado")};
   $("k-neon").onclick=()=>{cfg.skin="neon";persistCfg();applySkin();renderAjustes()};
   $("k-clasico").onclick=()=>{cfg.skin="clasico";persistCfg();applySkin();renderAjustes()};
   const bind=(id,fn)=>$(id).addEventListener("change",e=>{fn(e.target.value);persistCfg();render();toast("Guardado")});
@@ -1112,9 +1120,13 @@ function punch(s, nr, msg){
 
 function render(){
   applySkin();
-  ["hoy","mes","nomina","ajustes"].forEach(k=>{$("v-"+k).hidden=k!==tab});
+  rpgNow=null;
+  $("tab-rpg").hidden=!cfg.rpg;
+  if(tab==="rpg" && !cfg.rpg) tab="hoy";
+  ["hoy","mes","nomina","ajustes","rpg"].forEach(k=>{$("v-"+k).hidden=k!==tab});
   document.querySelectorAll("nav.tabs button").forEach(b=>{if(b.dataset.tab===tab)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
-  if(tab==="hoy")renderHoy(); else if(tab==="mes")renderMes(); else if(tab==="nomina")renderNomina(); else renderAjustes();
+  if(tab==="hoy")renderHoy(); else if(tab==="mes")renderMes(); else if(tab==="nomina")renderNomina(); else if(tab==="rpg")renderRPG(); else renderAjustes();
+  rpgCheck();
   if(!$("quick").hidden) renderQuick();
 }
 setInterval(()=>{if(tab==="hoy" && !$("sheet").classList.contains("show"))renderHoy()},30000);
@@ -1189,6 +1201,113 @@ function flash(){
 render();
 
 /* ---------- fichaje rápido desde fuera de la app (acceso directo ?fichar) ---------- */
+/* ---------- modo RPG (motor en js/rpg.js; todo sale de los fichajes) ---------- */
+var rpgNow=null; // var: render() se llama antes de llegar aquí
+function rpg(){
+  if(rpgNow) return rpgNow;
+  const audits=Object.values(cfg.reales||{}).filter(r=>r.neto!=null||r.hx!=null||r.hf!=null).length;
+  rpgNow=MTRPG.compute({months, calc, periodOf, parse, iso, addDays, today:todayISO(), lastBackup:stamp("lastBackup"), audits});
+  return rpgNow;
+}
+function xpBar(R){const pct=Math.max(0,Math.min(100,(R.xp-R.from)/(R.to-R.from)*100));return `<div class="xpbar" role="img" aria-label="${R.xp-R.from} de ${R.to-R.from} puntos de experiencia"><i style="width:${pct}%"></i></div>`}
+function bossBar(b){const pct=b.max?b.hp/b.max*100:0;return `<div class="hpbar" role="img" aria-label="Vida del jefe: ${b.hp} de ${b.max}"><i style="width:${pct}%"></i></div>`}
+function rpgMini(){
+  const R=rpg(), b=R.boss;
+  return `<button class="rpgmini" data-tab="rpg" aria-label="Ver tu personaje">
+    <canvas class="ava" width="48" height="48" data-tier="${R.rank.tier}" aria-hidden="true"></canvas>
+    <div class="rm-in">
+      <div class="rm-top"><b>NV ${R.L}</b><span>${R.rank.name}</span><em class="num">${R.xp-R.from}/${R.to-R.from} XP</em></div>
+      ${xpBar(R)}
+      ${b&&b.max?`<div class="rm-boss"><span>${b.name}</span>${bossBar(b)}</div>`:""}
+    </div></button>`;
+}
+var avaTimer=null, avaFrame=0;
+function paintAvatars(){
+  const list=[...document.querySelectorAll("canvas.ava")].filter(c=>c.offsetParent);
+  list.forEach(c=>MTRPG.drawAvatar(c,Number(c.dataset.tier)||0,avaFrame));
+  clearInterval(avaTimer);
+  if(list.length && !reduce) avaTimer=setInterval(()=>{
+    if(document.hidden) return;
+    avaFrame^=1; document.querySelectorAll("canvas.ava").forEach(c=>{if(c.offsetParent)MTRPG.drawAvatar(c,Number(c.dataset.tier)||0,avaFrame)});
+  },650);
+}
+function renderRPG(){
+  const R=rpg(), b=R.boss, X=MTRPG.XP;
+  const fdate=x=>{const d=parse(x);return `${d.getDate()} ${MON[d.getMonth()].slice(0,3)}`};
+  const pctP=R.onTime?Math.round(R.punctual/R.onTime*100):0;
+  const done=R.bosses.filter(x=>x.closed);
+  $("v-rpg").innerHTML=`
+  <div class="rpghero">
+    <canvas class="ava big" width="128" height="128" data-tier="${R.rank.tier}" aria-hidden="true"></canvas>
+    <div class="rh-in">
+      <small>Tu personaje</small>
+      <div class="rh-lv">Nivel <b class="num">${R.L}</b></div>
+      <div class="rh-rank">${R.rank.name}${R.rank.next?` · ${R.rank.next.name} en el nivel ${R.rank.next.min}`:""}</div>
+      ${xpBar(R)}
+      <div class="rh-xp num">${R.xp-R.from} / ${R.to-R.from} XP para el nivel ${R.L+1}</div>
+    </div>
+  </div>
+  ${b?`<div class="card boss">
+    <h3>Jefe del periodo</h3>
+    <div class="bs-name">${b.name}</div>
+    ${bossBar(b)}
+    <p class="hint num" style="margin:8px 0 0">${b.max?(b.hp?`Vida ${b.hp} de ${b.max}. Cada día de trabajo que fichas le quita uno. Si los fichas todos, cae el ${fdate(b.end)}: +${X.jefe} XP.`:`¡Sin vida! Cae al cerrar el periodo el ${fdate(b.end)}: +${X.jefe} XP.`):"Este periodo no tienes días de trabajo previstos."}</p>
+    ${done.length?`<p class="hint" style="margin:6px 0 0">Jefes derrotados: <b>${R.won} de ${done.length}</b></p>`:""}
+  </div>`:""}
+  <div class="card">
+    <h3>Estadísticas</h3>
+    <div class="stats num">
+      <div><b>${R.days}</b><small>días fichados</small></div>
+      <div><b>${R.streak}</b><small>racha actual</small></div>
+      <div><b>${R.best}</b><small>mejor racha</small></div>
+      <div><b>${pctP}%</b><small>entradas a tu hora</small></div>
+      <div><b>${R.rests}</b><small>descansos respetados</small></div>
+      <div><b>${R.ach.filter(a=>a.ok).length}/${R.ach.length}</b><small>logros</small></div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Logros</h3>
+    <div class="achs">${R.ach.map(a=>`<div class="ach${a.ok?" ok":""}"><i aria-hidden="true">${a.ok?"★":"☆"}</i><b>${a.name}</b><small>${a.desc}</small></div>`).join("")}</div>
+  </div>
+  <div class="card">
+    <h3>Cómo se gana experiencia</h3>
+    <table class="ntable num">
+      <tr><td>Fichar un día (entrada y salida)</td><td>+${X.dia}</td></tr>
+      <tr><td>Entrar a tu hora (hasta 5 min tarde)</td><td>+${X.puntual}</td></tr>
+      <tr><td>Completar el turno</td><td>+${X.completo}</td></tr>
+      <tr><td>Racha<small>+1 por cada 5 días seguidos, hasta +5</small></td><td>+1…5</td></tr>
+      <tr><td>Descanso o festivo sin trabajar</td><td>+${X.descanso}</td></tr>
+      <tr><td>Derrotar al jefe del periodo</td><td>+${X.jefe}</td></tr>
+      <tr><td>Cada logro</td><td>+${X.logro}</td></tr>
+    </table>
+    <p class="disc">Las horas extra no dan experiencia adicional: aquí se premia la constancia, no echar más horas. Vacaciones y bajas no rompen la racha.</p>
+  </div>`;
+  paintAvatars();
+}
+// Celebra subidas de nivel y logros nuevos (solo hacia arriba: deshacer no quita lo ya celebrado)
+function rpgCheck(){
+  if(!cfg.rpg) return;
+  const R=rpg(), seen=ls.get("rpgSeen");
+  const ok=R.ach.filter(a=>a.ok).map(a=>a.id);
+  if(!seen){ls.set("rpgSeen",{L:R.L,ach:ok});return}
+  const nuevos=R.ach.filter(a=>a.ok && !seen.ach.includes(a.id));
+  if(R.L<=seen.L && !nuevos.length) return;
+  ls.set("rpgSeen",{L:Math.max(R.L,seen.L),ach:[...new Set([...seen.ach,...ok])]});
+  const up=R.L>seen.L;
+  if(!$("quick").hidden || !$("sheet").hidden || !$("report").hidden){
+    setTimeout(()=>toast(up?`¡Subes a nivel ${R.L}!`:`Logro: ${nuevos[0].name}`),1900); return;
+  }
+  setTimeout(()=>{
+    openSheet(`<div class="grab"></div><div class="lvup">
+      <canvas class="ava big" width="128" height="128" data-tier="${R.rank.tier}" aria-hidden="true"></canvas>
+      <h3 id="sh-title">${up?`¡Nivel ${R.L}!`:"¡Logro nuevo!"}</h3>
+      ${up?`<p>Ahora eres <b>${R.rank.name}</b>.${R.rank.next?` En el nivel ${R.rank.next.min} pasarás a ${R.rank.next.name}.`:""}</p>`:""}
+      ${nuevos.map(a=>`<p class="lv-ach">★ <b>${a.name}</b> · ${a.desc} · +${MTRPG.XP.logro} XP</p>`).join("")}
+    </div><div class="foot" style="grid-template-columns:1fr"><button class="btn primary" data-close>¡Vamos!</button></div>`);
+    paintAvatars();
+  },700);
+}
+
 /* ---------- pantalla de fichaje rápido ---------- */
 function quickState(){
   const od=nightOpen(), t=todayISO(), s=od||t, r=rec(s)||{}, c=calc(s);
@@ -1223,7 +1342,7 @@ function renderQuick(){
       ${q.mode==="in"&&!p.rest?`<button class="btn line small" id="q-full">Turno completo ${p.e}–${p.s}</button>`:""}
       <button class="btn line small" data-qx="30">+30 min extra</button><button class="btn line small" data-qx="60">+1 h extra</button>
     </div>`:""}
-    <div class="q-per num">Extras del periodo <b>${fmt(pt.extra)}</b> · cierra el ${shortD(per.end)}</div>
+    <div class="q-per num">Extras del periodo <b>${fmt(pt.extra)}</b> · cierra el ${shortD(per.end)}${cfg.rpg?` · <b>NV ${rpg().L}</b>`:""}</div>
   </div>`;
   $("q-app").onclick=closeQuick;
   const qe=$("q-edit"); if(qe) qe.onclick=()=>{closeQuick();openEditor(q.s)};
