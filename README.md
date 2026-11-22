@@ -20,7 +20,8 @@ Una app que vive en la pantalla de inicio del móvil y permite fichar en un toqu
 
 ## Funcionalidades
 
-- **Fichaje rápido:** entrada y salida con la hora actual, o "turno completo" en un toque.
+- **Fichaje rápido:** entrada y salida con la hora actual, o "turno completo" en un toque. Cada fichaje se puede deshacer durante 5 segundos.
+- **Pantalla de fichaje:** opcionalmente la app se abre en una pantalla con la hora, el turno de hoy, un botón grande para fichar y botones de +30 min y +1 h de extra.
 - **Turnos configurables:** un asistente con plantillas (mañana y tarde alternas, mañana-tarde-noche, horario fijo, días seguidos de trabajo y descanso) o un ciclo dibujado día a día, de hasta 6 semanas y 4 turnos. Admite turnos de noche que cruzan la medianoche. Si cambias de turnos «desde hoy», los periodos pasados no se recalculan.
 - **Contador de horas extra** del periodo de liquidación (configurable, por defecto del 20 al 19).
 - **Calculadora de extras:** "si entro a las 5:20, ¿cuántas extras me supone?"

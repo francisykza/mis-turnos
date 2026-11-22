@@ -265,10 +265,10 @@ function renderHoy(){
 
   $("b-x").onclick=()=>openExtra(t);
   const bkn=$("bk-now"); if(bkn){bkn.onclick=exportBackup; $("bk-later").onclick=()=>{ls.set("backupSnooze",Date.now()+7*864e5);renderHoy();toast("Te lo recuerdo en una semana")}}
-  const bin=$("b-in"); if(bin) bin.onclick=()=>{setRec(t,Object.assign({},r,{e:nowHM(),s:null}));toast("Entrada fichada a las "+nowHM())};
-  const bon=$("b-outn"); if(bon) bon.onclick=()=>{setRec(od,Object.assign({},rec(od),{s:nowHM()}));toast("Salida fichada a las "+nowHM())};
-  const bout=$("b-out"); if(bout) bout.onclick=()=>{setRec(t,Object.assign({},r,{s:nowHM()}));toast("Salida fichada a las "+nowHM())};
-  const bfull=$("b-full"); if(bfull) bfull.onclick=()=>{setRec(t,Object.assign({},r,{e:c.p.e,s:c.p.s}));toast("Turno completo apuntado")};
+  const bin=$("b-in"); if(bin) bin.onclick=()=>punch(t,Object.assign({},r,{e:nowHM(),s:null}),"Entrada fichada a las "+nowHM());
+  const bon=$("b-outn"); if(bon) bon.onclick=()=>punch(od,Object.assign({},rec(od),{s:nowHM()}),"Salida fichada a las "+nowHM());
+  const bout=$("b-out"); if(bout) bout.onclick=()=>punch(t,Object.assign({},r,{s:nowHM()}),"Salida fichada a las "+nowHM());
+  const bfull=$("b-full"); if(bfull) bfull.onclick=()=>punch(t,Object.assign({},r,{e:c.p.e,s:c.p.s}),"Turno completo apuntado");
 }
 
 function renderMes(){
@@ -784,8 +784,11 @@ function renderAjustes(){
     </ul>
   </div>
   <div class="card">
-    <h3>Fichar sin abrir la app</h3>
-    <p class="hint">Con la app instalada, mantén pulsado su icono y arrastra <b>"Fichar ahora"</b> a la pantalla de inicio. Al tocarlo ficha la entrada (o la salida si ya habías entrado) con la hora exacta y calcula la extra con tu horario.</p>
+    <h3>Fichaje rápido</h3>
+    <p class="hint">Una pantalla con la hora, tu turno y un botón grande para fichar. Cada fichaje se puede deshacer durante 5 segundos, y tiene botones para sumar media hora o una hora de extra.</p>
+    <div class="seg" role="group" aria-label="Al abrir la app"><button id="qs-on" aria-pressed="${cfg.inicio==="rapido"}">Abrir en fichaje</button><button id="qs-off" aria-pressed="${cfg.inicio!=="rapido"}">Abrir en Hoy</button></div>
+    <button class="btn line small" id="qs-try" style="width:100%;margin-top:10px">Ver la pantalla de fichaje</button>
+    <p class="hint" style="margin:12px 0 0">Y sin abrir la app: con la app instalada, mantén pulsado su icono y arrastra <b>"Fichar ahora"</b> a la pantalla de inicio. Al tocarlo ficha la entrada (o la salida si ya habías entrado) con la hora exacta y calcula la extra con tu horario.</p>
   </div>
   <div class="card">
     <h3>Copia de seguridad</h3>
@@ -809,6 +812,9 @@ function renderAjustes(){
   $("k-neon").onclick=()=>{cfg.skin="neon";persistCfg();applySkin();renderAjustes()};
   $("k-clasico").onclick=()=>{cfg.skin="clasico";persistCfg();applySkin();renderAjustes()};
   const bind=(id,fn)=>$(id).addEventListener("change",e=>{fn(e.target.value);persistCfg();render();toast("Guardado")});
+  $("qs-on").onclick=()=>{cfg.inicio="rapido";persistCfg();renderAjustes();toast("La app se abrirá en fichaje rápido")};
+  $("qs-off").onclick=()=>{cfg.inicio="hoy";persistCfg();renderAjustes();toast("La app se abrirá en Hoy")};
+  $("qs-try").onclick=openQuick;
   bind("c-c",v=>{cfg.corte=Number(v);viewYM=null});
   bind("c-cc",v=>{cfg.ccaa=v});
   bind("c-w",v=>cfg.weekly=Math.max(1,Number(v)||37.5));
@@ -1079,23 +1085,46 @@ function closeSheet(){
   setTimeout(()=>{$("scrim").hidden=true;$("sheet").hidden=true},220);
 }
 $("scrim").onclick=closeSheet;
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(!$("report").hidden)closeReport();else closeSheet()}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(!$("report").hidden)closeReport();else if(!$("sheet").hidden)closeSheet();else if(!$("quick").hidden)closeQuick()}});
 document.addEventListener("click",e=>{
   const ed=e.target.closest("[data-edit]"); if(ed){openEditor(ed.dataset.edit);return}
   if(e.target.closest("[data-close]")) closeSheet();
   const tb=e.target.closest("[data-tab]"); if(tb){tab=tb.dataset.tab;render();window.scrollTo(0,0)}
 });
 
-let tt;function toast(m){flash();const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("show"),1800)}
+let tt, undoFn=null;
+// undo (opcional): función que deshace; el aviso dura 5 s y muestra «Deshacer»
+function toast(m, undo){
+  flash(); const t=$("toast"); undoFn=undo||null;
+  t.innerHTML=escH(m)+(undo?'<button type="button" class="tundo">Deshacer</button>':"");
+  t.classList.toggle("act",!!undo); t.classList.add("show"); clearTimeout(tt);
+  tt=setTimeout(()=>{t.classList.remove("show","act");undoFn=null}, undo?5000:1800);
+}
+$("toast").addEventListener("click",e=>{
+  if(!e.target.closest(".tundo")||!undoFn) return;
+  const f=undoFn; undoFn=null; clearTimeout(tt); $("toast").classList.remove("show","act"); f();
+});
+// Ficha un día y deja 5 s para deshacerlo (vuelve exactamente a como estaba)
+function punch(s, nr, msg){
+  const prev=rec(s); setRec(s,nr);
+  toast(msg, ()=>{setRec(s,prev?clone(prev):null); closeSheet(); toast("Deshecho")});
+}
 
 function render(){
   applySkin();
   ["hoy","mes","nomina","ajustes"].forEach(k=>{$("v-"+k).hidden=k!==tab});
   document.querySelectorAll("nav.tabs button").forEach(b=>{if(b.dataset.tab===tab)b.setAttribute("aria-current","page");else b.removeAttribute("aria-current")});
   if(tab==="hoy")renderHoy(); else if(tab==="mes")renderMes(); else if(tab==="nomina")renderNomina(); else renderAjustes();
+  if(!$("quick").hidden) renderQuick();
 }
 setInterval(()=>{if(tab==="hoy" && !$("sheet").classList.contains("show"))renderHoy()},30000);
-document.addEventListener("visibilitychange",()=>{if(!document.hidden)render()});
+let hiddenAt=0;
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){hiddenAt=Date.now();return}
+  // con «Abrir en fichaje», al volver tras 5 min fuera se enseña otra vez la pantalla de fichaje
+  if(cfg.inicio==="rapido" && hiddenAt && Date.now()-hiddenAt>5*6e4 && $("sheet").hidden && $("report").hidden) openQuick();
+  render();
+});
 
 /* ---------- aspecto neón: lluvia en canvas ---------- */
 function skin(){return cfg.skin||"neon"}
@@ -1160,6 +1189,63 @@ function flash(){
 render();
 
 /* ---------- fichaje rápido desde fuera de la app (acceso directo ?fichar) ---------- */
+/* ---------- pantalla de fichaje rápido ---------- */
+function quickState(){
+  const od=nightOpen(), t=todayISO(), s=od||t, r=rec(s)||{}, c=calc(s);
+  c.iso=s;
+  const mode = od?"outn" : r.tipo?"tipo" : c.open?"out" : (r.e&&r.s)?"done" : "in";
+  return {od,t,s,r,c,p:c.p,mode};
+}
+function renderQuick(){
+  const q=quickState(), {r,c,p}=q, d=new Date(), now=nowHM();
+  const per=periodOf(d), pt=sumRange(per.start,per.end);
+  let state, btn=null, out=false;
+  if(q.mode==="outn"||q.mode==="out"){
+    out=true; btn="Fichar salida";
+    state = q.mode==="outn" ? `Turno de noche · entraste ayer a las ${r.e} · llevas ${fmt(dur(r.e,now))}`
+      : `Entraste a las ${r.e} · llevas ${fmt(dur(r.e,now))}`+(p.rest||p.fest?"":` · sales a las ${p.s}`);
+  } else if(q.mode==="in"){
+    btn="Fichar entrada";
+    if(p.rest) state="Hoy descansas. Si te llaman, ficha igual: todo cuenta como extra.";
+    else if(p.fest) state="Festivo: lo que trabajes cuenta como horas festivas.";
+    else { const diff=toMin(p.e)-toMin(now);
+      state = diff>0 ? `Tu turno empieza en ${fmt(diff)}` : -diff<p.min ? `Tu turno empezó hace ${fmt(-diff)}` : "Tu turno de hoy ya ha terminado"; }
+  } else if(q.mode==="done"){
+    state=`Hoy: ${r.e} – ${r.s} · ${fmt(c.worked)}`+(c.extra?` · <b class="qx">+${fmt(c.extra)} extra</b>`:"")+(c.festH?` · ${fmt(c.festH)} festivas`:"");
+  } else state=TIPOS[r.tipo]+": hoy no se ficha.";
+  $("quick").innerHTML=`<div class="q-in">
+    <div class="q-top"><span class="q-date">${DOWL[d.getDay()]} ${d.getDate()} de ${MON[d.getMonth()]}</span><button class="q-skip" id="q-app">Abrir la app ›</button></div>
+    <div class="q-clock num">${now}</div>
+    <div class="pills">${pillsFor(c)}</div>
+    <p class="q-state num">${state}</p>
+    ${btn?`<button class="q-btn${out?" out":""}" id="q-punch"><span>${btn}</span><b class="num">${now}</b></button>`:`<button class="q-done" id="q-edit" aria-label="Editar el día"><span>✓</span><small>Editar</small></button>`}
+    ${q.mode!=="tipo"?`<div class="q-row">
+      ${q.mode==="in"&&!p.rest?`<button class="btn line small" id="q-full">Turno completo ${p.e}–${p.s}</button>`:""}
+      <button class="btn line small" data-qx="30">+30 min extra</button><button class="btn line small" data-qx="60">+1 h extra</button>
+    </div>`:""}
+    <div class="q-per num">Extras del periodo <b>${fmt(pt.extra)}</b> · cierra el ${shortD(per.end)}</div>
+  </div>`;
+  $("q-app").onclick=closeQuick;
+  const qe=$("q-edit"); if(qe) qe.onclick=()=>{closeQuick();openEditor(q.s)};
+  const pb=$("q-punch");
+  if(pb) pb.onclick=()=>{ const n=nowHM();
+    if(out){ if(dur(r.e,n)<2){toast("Acabas de fichar la entrada");return} punch(q.s,Object.assign({},r,{s:n}),"Salida fichada a las "+n) }
+    else punch(q.t,Object.assign({},r,{e:n,s:null}),"Entrada fichada a las "+n);
+    if(navigator.vibrate) try{navigator.vibrate(18)}catch(e){}
+  };
+  const fb=$("q-full"); if(fb) fb.onclick=()=>punch(q.t,Object.assign({},r,{e:p.e,s:p.s}),"Turno completo apuntado");
+  $("quick").querySelectorAll("[data-qx]").forEach(b=>b.onclick=()=>{
+    const m=Number(b.dataset.qx), cur=rec(q.s)||{};
+    punch(q.s,Object.assign({},cur,{x:(Number(cur.x)||0)+m}),`+${fmt(m)} de extra apuntadas`);
+  });
+}
+let quickTimer=null;
+function openQuick(){
+  closeSheet(); $("quick").hidden=false; document.body.classList.add("q-open"); renderQuick();
+  clearInterval(quickTimer); quickTimer=setInterval(()=>{if(!$("quick").hidden)renderQuick()},15000);
+}
+function closeQuick(){$("quick").hidden=true;document.body.classList.remove("q-open");clearInterval(quickTimer);render()}
+
 function quickClock(){
   let q; try{q=new URLSearchParams(location.search)}catch(e){return}
   if(!q.has("fichar")) return;
@@ -1169,7 +1255,7 @@ function quickClock(){
   if(r.tipo){
     title="Hoy está marcado como "+TIPOS[r.tipo].toLowerCase(); lines.push("No he fichado nada. Si vas a trabajar, cámbialo desde Hoy.");
   } else if(!r.e){
-    r.e=now; r.s=null; setRec(t,r);
+    r.e=now; r.s=null; punch(t,r,"Entrada fichada a las "+now);
     title="Entrada fichada · "+now;
     if(p.fest) lines.push("Hoy es festivo: todo lo que trabajes cuenta como horas festivas.");
     else if(p.rest) lines.push("Es tu día de descanso: todo lo que trabajes cuenta como extra.");
@@ -1183,7 +1269,7 @@ function quickClock(){
   } else if(!r.s){
     if(dur(r.e,now)<2){ title="Entrada ya fichada a las "+r.e; lines.push("Para la salida, toca el botón cuando termines."); }
     else{
-      r.s=now; setRec(t,r); const c=calc(t);
+      r.s=now; punch(t,r,"Salida fichada a las "+now); const c=calc(t);
       title="Salida fichada · "+now;
       lines.push(`${od?"Turno de anoche":"Hoy"}: <b>${r.e} – ${r.s}</b> · ${fmt(c.worked)} trabajadas`);
       if(c.extra) lines.push(`<b style="color:var(--fucsia)">+${fmt(c.extra)} de extra</b> sumadas al periodo`);
@@ -1198,6 +1284,7 @@ function quickClock(){
   setTimeout(flash,150);
 }
 quickClock();
+if(cfg.inicio==="rapido" && !isNewUser && $("sheet").hidden) openQuick();
 // Primera vez (sin datos ni ajustes): asistente de turnos
 if(isNewUser && $("sheet").hidden) setTimeout(()=>openWizard(1,true),300);
 
