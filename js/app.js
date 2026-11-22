@@ -148,7 +148,7 @@ function sumRange(from,to){ // inclusive ISO strings
 /* ---------- guardado ---------- */
 const queues={};
 function persistMonth(ym){
-  ls.set("months",months);
+  ls.set("months",months); markEdit();
   if(!db) return;
   const body={dias: months[ym]||{}, actualizado: Date.now()};
   queues[ym]=(queues[ym]||Promise.resolve()).then(()=>db.doc("meses/"+ym).set(body)).catch(()=>toast("No se pudo sincronizar; queda guardado en el móvil"));
@@ -249,6 +249,10 @@ function renderHoy(){
     <div class="sub">${sub}</div>
     <div class="actions">${actions}</div>
   </div>
+  ${backupDue()?`<div class="bkban" role="region" aria-label="Copia de seguridad">
+    <div><b>Haz una copia de tus datos</b><small>${backupInfo()} Tus fichajes solo están en este móvil.</small></div>
+    <div class="bkban-a"><button class="btn primary small" id="bk-now">Guardar copia</button><button class="btn line small" id="bk-later">Ahora no</button></div>
+  </div>`:""}
   <section class="block">
     <div class="h2"><h2>Esta semana</h2><span>${weekLabel(mon)}</span></div>
     <div class="week">
@@ -260,6 +264,7 @@ function renderHoy(){
   <p class="note">Toca cualquier día de la semana para apuntarlo o corregirlo.</p>`;
 
   $("b-x").onclick=()=>openExtra(t);
+  const bkn=$("bk-now"); if(bkn){bkn.onclick=exportBackup; $("bk-later").onclick=()=>{ls.set("backupSnooze",Date.now()+7*864e5);renderHoy();toast("Te lo recuerdo en una semana")}}
   const bin=$("b-in"); if(bin) bin.onclick=()=>{setRec(t,Object.assign({},r,{e:nowHM(),s:null}));toast("Entrada fichada a las "+nowHM())};
   const bon=$("b-outn"); if(bon) bon.onclick=()=>{setRec(od,Object.assign({},rec(od),{s:nowHM()}));toast("Salida fichada a las "+nowHM())};
   const bout=$("b-out"); if(bout) bout.onclick=()=>{setRec(t,Object.assign({},r,{s:nowHM()}));toast("Salida fichada a las "+nowHM())};
@@ -640,8 +645,9 @@ function renderAjustes(){
   </div>
   <div class="card">
     <h3>Copia de seguridad</h3>
-    <p class="hint">Tus datos se guardan solo en este móvil. Haz una copia de vez en cuando por si cambias de móvil o borras el navegador.</p>
-    <div class="grid2"><button class="btn line small" id="bk-exp">Exportar copia</button><button class="btn line small" id="bk-imp">Importar copia</button></div>
+    <p class="hint">Tus datos se guardan solo en este móvil. Si lo pierdes, lo cambias o se borran los datos del navegador, solo los recuperas con una copia. <b>${backupInfo()}</b></p>
+    <p class="hint">Al guardarla se abre el menú Compartir: elige <b>Guardar en Archivos</b> (iCloud Drive), Google Drive, o mándatela por correo o WhatsApp. Cada ${BACKUP_DIAS} días con cambios te lo recordaré en Hoy.</p>
+    <div class="grid2"><button class="btn primary small" id="bk-exp">Guardar copia</button><button class="btn line small" id="bk-imp">Recuperar copia</button></div>
     <input type="file" id="bk-file" accept="application/json,.json" hidden>
   </div>
   <div class="card">
@@ -804,17 +810,51 @@ function saveWizard(){
   cfg.turnos=clone(wz.turnos); cfg.ciclo=ciclo; cfg.weekly=wz.weekly; cfg.corte=wz.corte; cfg.ccaa=wz.ccaa;
   persistCfg(); viewYM=null; nomYM=null; closeSheet(); render(); toast("Turnos guardados");
 }
+/* ---------- copias de seguridad ---------- */
+// Fechas en el navegador (no en cfg): lastBackup = última copia, lastEdit = último cambio,
+// backupSnooze = hasta cuándo no avisar tras «Ahora no».
+const stamp = k => Number(ls.get(k))||0;
+function markEdit(){ls.set("lastEdit",Date.now())}
+// Quien ya tenía datos al llegar esta versión cuenta como «sin copia todavía»
+if(!stamp("lastEdit") && Object.keys(months).length) markEdit();
+const daysSince = t => Math.floor((Date.now()-t)/864e5);
+const BACKUP_DIAS = 14;
+function backupDue(){
+  const lb=stamp("lastBackup"), le=stamp("lastEdit");
+  if(!Object.keys(months).length || le<=lb || Date.now()<stamp("backupSnooze")) return false;
+  if(!lb) return Object.values(months).reduce((a,m)=>a+Object.keys(m||{}).length,0)>=3; // sin agobiar el primer día
+  return daysSince(lb)>=BACKUP_DIAS;
+}
+function backupInfo(){
+  const lb=stamp("lastBackup");
+  if(!lb) return "Aún no has guardado ninguna copia.";
+  const n=daysSince(lb), d=new Date(lb);
+  return `Última copia: ${n===0?"hoy":n===1?"ayer":"hace "+n+" días"} (${d.getDate()} ${MON[d.getMonth()].slice(0,3)}).`;
+}
+function backupDone(){ls.set("lastBackup",Date.now());ls.set("backupSnooze",0);toast("Copia guardada");render()}
+// En el móvil abre el menú Compartir (Guardar en Archivos, Drive, WhatsApp, correo…);
+// en el ordenador, o si no se puede compartir, descarga el archivo.
 function exportBackup(){
   const data={app:"mis-turnos",version:DATA_V,exportado:new Date().toISOString(),cfg,months};
-  const txt=JSON.stringify(data,null,1);
-  try{
-    const a=document.createElement("a");
-    a.href=URL.createObjectURL(new Blob([txt],{type:"application/json"}));
-    a.download="mis-turnos-copia-"+todayISO()+".json";
-    document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);
-    toast("Copia exportada");
-  }catch(e){showText(txt)}
+  const txt=JSON.stringify(data,null,1), name="mis-turnos-copia-"+todayISO()+".json";
+  const download=()=>{
+    try{
+      const a=document.createElement("a");
+      a.href=URL.createObjectURL(new Blob([txt],{type:"application/json"}));
+      a.download=name;
+      document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);
+      backupDone();
+    }catch(e){showText(txt)}
+  };
+  let file=null;
+  try{file=new File([txt],name,{type:"application/json"})}catch(e){}
+  const touch=matchMedia("(pointer:coarse)").matches;
+  if(touch && file && navigator.canShare && navigator.canShare({files:[file]})){
+    navigator.share({files:[file],title:"Copia de Mis Turnos"}).then(backupDone,e=>{if(e&&e.name==="AbortError")return;download()});
+  } else download();
 }
+// Pide al navegador que no borre los datos de la app cuando ande justo de espacio
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persisted().then(p=>{if(!p)navigator.storage.persist()}).catch(()=>{})}catch(e){}
 function importBackup(file){
   const rd=new FileReader();
   rd.onload=()=>{
@@ -822,9 +862,12 @@ function importBackup(file){
       const d=JSON.parse(rd.result);
       if(!d||d.app!=="mis-turnos"||typeof d.months!=="object") throw 0;
       if((Number(d.version)||0)>DATA_V){toast("Esa copia es de una versión más nueva; actualiza la app");return}
+      const de=d.exportado?new Date(d.exportado):null, cuando=de&&!isNaN(de)?` del ${de.getDate()} de ${MON[de.getMonth()]} de ${de.getFullYear()}`:"";
+      if(Object.keys(months).length && !confirm(`Se sustituirán todos los datos de este móvil por los de la copia${cuando}. ¿Seguir?`)) return;
       const o=migrate(d.cfg||{}, d.months||{}, Number(d.version)||0);
       cfg=o.cfg; months=o.months;
       ls.set("cfg",cfg); ls.set("months",months); ls.set("schema",DATA_V); viewYM=null; nomYM=null;
+      ls.set("lastBackup",Date.now()); ls.set("lastEdit",Date.now()-1);
       render(); toast("Copia importada");
     }catch(e){toast("Ese archivo no es una copia de Mis Turnos")}
   };

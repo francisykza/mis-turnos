@@ -1,4 +1,4 @@
-const CACHE="mis-turnos-v5";
+const CACHE="mis-turnos-v6";
 const SHELL=["./","index.html","css/app.css","js/festivos.js","js/app.js","manifest.json","icon-192.png","icon-512.png","apple-touch-icon.png"];
 // GitHub Pages deja guardar cada archivo 10 minutos en la caché del navegador.
 // Para que una versión nueva llegue al momento, la página, el código y los estilos

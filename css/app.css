@@ -162,6 +162,12 @@ section.block{margin-top:22px}
 .step.sm button{width:38px;height:38px;font-size:19px;border-radius:11px}
 .step.sm output{min-width:60px;font-size:15px}
 
+/* AVISO DE COPIA */
+.bkban{margin-top:12px;background:var(--surface);border:1.5px solid var(--fucsia);border-radius:20px;padding:14px 16px;box-shadow:var(--shadow)}
+.bkban b{display:block;font:700 16px var(--display)}
+.bkban small{display:block;color:var(--muted);font-size:13px;margin-top:3px}
+.bkban-a{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}
+
 /* TURNOS: tira de días, asistente y ciclo */
 .strip,.cycgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
 .sd,.cyc{border-radius:12px;padding:6px 0 7px;display:flex;flex-direction:column;align-items:center;gap:1px;background:var(--ground);border:1.5px solid transparent}
